@@ -1,0 +1,62 @@
+---
+Language:        Cpp
+BasedOnStyle:  LLVM
+
+# --- Indentation ---
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+ColumnLimit:     100
+
+# --- Braces & Wrapping ---
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:      true
+  AfterStruct:     true
+  AfterEnum:       true
+  AfterFunction:   true
+  AfterControlStatement: false
+  AfterNamespace:  true
+  AfterUnion:      false
+  BeforeCatch:     false
+  BeforeElse:      false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+
+# --- Spacing ---
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInContainerLiterals: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# --- Pointers & References ---
+PointerAlignment: Right
+
+# --- Alignment ---
+AccessModifierOffset: -4
+AlignAfterOpenBracket: DontAlign
+ContinuationIndentWidth: 4
+BinPackArguments: true
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands:   true
+AlignTrailingComments: true
+
+# --- Short Blocks / Functions / Loops ---
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# --- Modern C++ Features ---
+Standard:        c++20
+SpaceBeforeCpp11BracedList: true
+Cpp11BracedListStyle: false
+
+# --- Sorting & Inclusion ---
+SortIncludes: true
