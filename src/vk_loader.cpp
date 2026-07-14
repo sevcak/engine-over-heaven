@@ -400,6 +400,18 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
                 new_surface.material = materials[0];
             }
 
+            // Loop the vertices of this surface, find min/max bounds.
+            glm::vec3 min_pos = vertices[initial_vert].position;
+            glm::vec3 max_pos = min_pos;
+            for (int i = initial_vert; i < vertices.size(); i++) {
+                min_pos = glm::min(min_pos, vertices[i].position);
+                max_pos = glm::max(max_pos, vertices[i].position);
+            }
+            // Compute the origin and extents from min/max, use extent length for radius.
+            new_surface.bounds.origin = (max_pos + min_pos) / 2.0f;
+            new_surface.bounds.extents = (max_pos - min_pos) / 2.0f;
+            new_surface.bounds.sphere_radius = glm::length(new_surface.bounds.extents);
+
             new_mesh->surfaces.push_back(new_surface);
         }
 

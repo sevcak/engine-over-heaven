@@ -6,17 +6,28 @@
 #include <fastgltf/types.hpp>
 #include <vk_descriptors.h>
 
-struct GLTFMaterial {
+struct GLTFMaterial
+{
     MaterialInstance data;
 };
 
-struct GeoSurface {
+struct Bounds
+{
+    glm::vec3 origin;
+    float sphere_radius;
+    glm::vec3 extents;
+};
+
+struct GeoSurface
+{
     uint32_t start_index;
     uint32_t count;
+    Bounds bounds;
     std::shared_ptr<GLTFMaterial> material;
 };
 
-struct MeshAsset {
+struct MeshAsset
+{
     std::string name;
 
     std::vector<GeoSurface> surfaces;
@@ -28,7 +39,8 @@ class VulkanEngine;
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
     VulkanEngine *engine, std::filesystem::path file_path);
 
-struct LoadedGLTF : public IRenderable {
+struct LoadedGLTF : public IRenderable
+{
     std::unordered_map<std::string, std::shared_ptr<MeshAsset>> meshes;
     std::unordered_map<std::string, std::shared_ptr<Node>> nodes;
     std::unordered_map<std::string, AllocatedImage> images;
