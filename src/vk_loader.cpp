@@ -529,7 +529,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.depth = 1;
 
                     new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
-                        VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                        VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
                 }
@@ -545,7 +545,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.depth = 1;
 
                     new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
-                        VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                        VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
                 }
@@ -579,7 +579,7 @@ std::optional<AllocatedImage> load_image(
                         VkExtent3D image_size = { static_cast<uint32_t>(width),
                             static_cast<uint32_t>(height), 1 };
                         new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
-                            VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                            VK_IMAGE_USAGE_SAMPLED_BIT, true);
                         stbi_image_free(data);
                     }
                 }

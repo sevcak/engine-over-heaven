@@ -1263,7 +1263,7 @@ AllocatedImage VulkanEngine::create_image(
     memcpy(upload_buffer.info.pMappedData, data, data_size);
 
     AllocatedImage new_image = create_image(
-        size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+        size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
 
     immediate_submit([&](VkCommandBuffer cmd) {
         vkutil::transition_image(
