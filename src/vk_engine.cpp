@@ -25,44 +25,58 @@
 #include "vk_mem_alloc.h"
 #include <glm/packing.hpp>
 
+#include "cvars.hpp"
+
 VulkanEngine *loaded_engine = nullptr;
+
+static AutoCVar_Float cvar_render_scale(
+    "r.render_scale", "Resolution scale for rendering", 1.0f, CVarFlags::EditFloatDrag);
+static AutoCVar_Int cvar_cull(
+    "r.cull", "Enable frustum culling (1 = on, 0 = off)", 1, CVarFlags::EditCheckbox);
+static AutoCVar_Float cvar_main_fov(
+    "r.main_fov", "FOV for the main camera", 70.0f, CVarFlags::EditFloatDrag);
 
 constexpr bool use_validation_layers = true;
 
-bool is_visible(RenderObject &obj, const glm::mat4& viewproj)
+bool is_visible(RenderObject &obj, const glm::mat4 &viewproj)
 {
+    if (cvar_cull.get() == 0) {
+        return true;
+    }
+
     std::array<glm::vec3, 8> corners {
-        glm::vec3{  1.f,  1.f,  1.f },
-        glm::vec3{  1.f,  1.f, -1.f },
-        glm::vec3{  1.f, -1.f,  1.f },
-        glm::vec3{  1.f, -1.f, -1.f },
-        glm::vec3{ -1.f,  1.f,  1.f },
-        glm::vec3{ -1.f,  1.f, -1.f },
-        glm::vec3{ -1.f, -1.f,  1.f },
-        glm::vec3{ -1.f, -1.f, -1.f },
+        glm::vec3 { 1.f, 1.f, 1.f },
+        glm::vec3 { 1.f, 1.f, -1.f },
+        glm::vec3 { 1.f, -1.f, 1.f },
+        glm::vec3 { 1.f, -1.f, -1.f },
+        glm::vec3 { -1.f, 1.f, 1.f },
+        glm::vec3 { -1.f, 1.f, -1.f },
+        glm::vec3 { -1.f, -1.f, 1.f },
+        glm::vec3 { -1.f, -1.f, -1.f },
     };
 
-    glm::mat4 matrix = viewproj * obj.transform; 
+    glm::mat4 matrix = viewproj * obj.transform;
 
     glm::vec3 min = { 1.5, 1.5, 1.5 };
     glm::vec3 max = { -1.5, -1.5, -1.5 };
 
     for (int c = 0; c < 8; c++) {
         // Project corner into clip space.
-        glm::vec4 v = matrix * glm::vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.0f);
+        glm::vec4 v =
+            matrix * glm::vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.0f);
 
         // Perspective correction.
         v.x /= v.w;
         v.y /= v.w;
         v.z /= v.w;
 
-        min = glm::min(glm::vec3{ v }, min);
-        max = glm::max(glm::vec3{ v }, max);
+        min = glm::min(glm::vec3 { v }, min);
+        max = glm::max(glm::vec3 { v }, max);
     }
 
     // Check the clip space box is within view.
-    if (min.z > 1.0f || max.z < 0.0f || min.x > 1.0f || max.x < -1.0f
-            || min.y > 1.0f || max.y < -1.f) {
+    if (min.z > 1.0f || max.z < 0.0f || min.x > 1.0f || max.x < -1.0f || min.y > 1.0f ||
+        max.y < -1.f) {
         return false;
     }
     return true;
@@ -90,8 +104,8 @@ void VulkanEngine::init()
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
-    _window = SDL_CreateWindow("Ascension Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        _window_extent.width, _window_extent.height, window_flags);
+    _window = SDL_CreateWindow("Engine Over Heaven", SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED, _window_extent.width, _window_extent.height, window_flags);
 
     init_vulkan();
 
@@ -170,7 +184,6 @@ void VulkanEngine::draw()
     update_scene();
 
     // Wait until the GPU has finished rendering the last frame.
-
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame().render_fence, true, 1000000000));
 
     get_current_frame().deletion_queue.flush();
@@ -195,10 +208,11 @@ void VulkanEngine::draw()
 
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmd_begin_info));
 
-    _draw_extent.width =
-        std::min(_swapchain_extent.width, _draw_image.image_extent.width) * _render_scale;
-    _draw_extent.height =
-        std::min(_swapchain_extent.height, _draw_image.image_extent.height) * _render_scale;
+    float render_scale = cvar_render_scale.get();
+    uint32_t base_width = std::min(_swapchain_extent.width, _draw_image.image_extent.width);
+    uint32_t base_height = std::min(_swapchain_extent.height, _draw_image.image_extent.height);
+    _draw_extent.width = std::max(1u, static_cast<uint32_t>(base_width * render_scale));
+    _draw_extent.height = std::max(1u, static_cast<uint32_t>(base_height * render_scale));
 
     // Transition the main draw image into general layout so we can compute-write into it.
     vkutil::transition_image(
@@ -330,7 +344,10 @@ void VulkanEngine::run()
         ImGui::End();
 
         if (ImGui::Begin("Background")) {
-            ImGui::SliderFloat("Render Scale", &_render_scale, 0.3f, 1.0f);
+            // float render_scale = cvar_render_scale.get();
+            // if (ImGui::SliderFloat("Render Scale", &render_scale, 0.3f, 1.0f)) {
+            //     cvar_render_scale.set(render_scale);
+            // }
 
             ComputeEffect &selected = _background_effects[_current_background_effect];
 
@@ -345,6 +362,8 @@ void VulkanEngine::run()
             ImGui::InputFloat4("data4", (float *)&selected.data.data4);
         }
         ImGui::End();
+
+        CVarSystem::get()->draw_imgui_editor();
 
         ImGui::Render();
 
@@ -969,20 +988,21 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             transparent_draws.push_back(i);
         }
     }
-    std::sort(transparent_draws.begin(), transparent_draws.end(), [&](const auto &i_a, const auto &i_b) {
-        const RenderObject &a = main_draw_context.transparent_surfaces[i_a];
-        const RenderObject &b = main_draw_context.transparent_surfaces[i_b];
+    std::sort(
+        transparent_draws.begin(), transparent_draws.end(), [&](const auto &i_a, const auto &i_b) {
+            const RenderObject &a = main_draw_context.transparent_surfaces[i_a];
+            const RenderObject &b = main_draw_context.transparent_surfaces[i_b];
 
-        // Project local bounds origin to world space.
-        glm::vec3 pos_a = glm::vec3(a.transform * glm::vec4(a.bounds.origin, 1.0f));
-        glm::vec3 pos_b = glm::vec3(b.transform * glm::vec4(b.bounds.origin, 1.0f));
+            // Project local bounds origin to world space.
+            glm::vec3 pos_a = glm::vec3(a.transform * glm::vec4(a.bounds.origin, 1.0f));
+            glm::vec3 pos_b = glm::vec3(b.transform * glm::vec4(b.bounds.origin, 1.0f));
 
-        float dist_a = glm::distance(pos_a, main_camera.position);
-        float dist_b = glm::distance(pos_b, main_camera.position);
+            float dist_a = glm::distance(pos_a, main_camera.position);
+            float dist_b = glm::distance(pos_b, main_camera.position);
 
-        // Sort back-to-front (furthest objects render first).
-        return dist_a > dist_b;
-    });
+            // Sort back-to-front (furthest objects render first).
+            return dist_a > dist_b;
+        });
 
     AllocatedBuffer gpu_scene_data_buffer = create_buffer(
         sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1039,12 +1059,12 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     auto draw = [&](const RenderObject &r) {
         if (r.material != last_material) {
             last_material = r.material;
-            
+
             // Rebind pipeline and descriptors if the material changed.
             if (r.material->pipeline != last_pipeline) {
                 last_pipeline = r.material->pipeline;
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    r.material->pipeline->pipeline);
+                vkCmdBindPipeline(
+                    cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     r.material->pipeline->layout, 0, 1, &global_descriptor, 0, nullptr);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1057,20 +1077,20 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
                 viewport.height = (float)_window_extent.height;
                 viewport.minDepth = 0.0f;
                 viewport.maxDepth = 1.0f;
-                
+
                 vkCmdSetViewport(cmd, 0, 1, &viewport);
-                
+
                 VkRect2D scissor = {};
                 scissor.offset.x = 0;
                 scissor.offset.y = 0;
                 scissor.extent.width = _window_extent.width;
                 scissor.extent.height = _window_extent.height;
-                
+
                 vkCmdSetScissor(cmd, 0, 1, &scissor);
             }
 
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1,
-                &r.material->material_set, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                r.material->pipeline->layout, 1, 1, &r.material->material_set, 0, nullptr);
         }
 
         // Rebind index buffer if needed.
@@ -1262,8 +1282,8 @@ AllocatedImage VulkanEngine::create_image(
 
     memcpy(upload_buffer.info.pMappedData, data, data_size);
 
-    AllocatedImage new_image = create_image(
-        size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
+    AllocatedImage new_image = create_image(size, format,
+        usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
 
     immediate_submit([&](VkCommandBuffer cmd) {
         vkutil::transition_image(
@@ -1285,7 +1305,7 @@ AllocatedImage VulkanEngine::create_image(
 
         if (mipmapped) {
             vkutil::generate_mipmaps(cmd, new_image.image,
-                VkExtent2D{ new_image.image_extent.width, new_image.image_extent.height });
+                VkExtent2D { new_image.image_extent.width, new_image.image_extent.height });
         } else {
             vkutil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1310,7 +1330,8 @@ void VulkanEngine::update_scene()
     main_camera.update();
 
     glm::mat4 view = main_camera.get_view_matrix();
-    glm::mat4 projection = glm::perspective(glm::radians(70.0f),
+    float fov_deg = std::clamp(static_cast<float>(cvar_main_fov.get()), 10.0f, 170.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(fov_deg),
         (float)_window_extent.width / (float)_window_extent.height, 10000.0f, 0.1f);
     projection[1][1] *= -1;
 

@@ -189,7 +189,6 @@ public:
     AllocatedImage _depth_image;
 
     VkExtent2D _draw_extent;
-    float _render_scale = 1.0f;
 
     DescriptorAllocatorGrowable _global_descriptor_allocator;
 
