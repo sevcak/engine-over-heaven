@@ -19,6 +19,7 @@ target_compile_definitions(vulkan_renderer PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
 target_include_directories(vulkan_renderer PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(vulkan_renderer PUBLIC
     core
+    camera
     vma
     glm
     Vulkan::Vulkan

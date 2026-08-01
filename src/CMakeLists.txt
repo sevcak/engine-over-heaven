@@ -1,6 +1,8 @@
 add_subdirectory(core)
+add_subdirectory(camera)
 add_subdirectory(renderer/vulkan)
 add_subdirectory(engine)
+
 
 add_executable(engine main.cpp)
 

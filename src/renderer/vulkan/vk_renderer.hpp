@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SDL_events.h>
-#include <camera.h>
+#include <camera/camera.hpp>
 #include <deque>
 #include <functional>
 #include <span>

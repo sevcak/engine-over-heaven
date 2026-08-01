@@ -1,6 +1,4 @@
 add_library(core STATIC
-    camera.cpp
-    camera.h
     cvars.cpp
     cvars.hpp
     string_utils.hpp

@@ -44,6 +44,7 @@ void Engine::init()
     main_camera.position = glm::vec3(30.f, -00.f, -085.f);
     main_camera.pitch = 0.0f;
     main_camera.yaw = 0.0f;
+    camera_controller = FlyCameraController(&main_camera);
 
     _test_meshes = load_gltf_meshes(&renderer, "../assets/basicmesh.glb").value();
 
@@ -116,7 +117,7 @@ void Engine::run()
                 }
             }
 
-            main_camera.process_sdl_event(e);
+            camera_controller.process_sdl_event(e);
 
             ImGui_ImplSDL2_ProcessEvent(&e);
         }
@@ -178,7 +179,11 @@ void Engine::update_scene()
 {
     auto start_time = std::chrono::system_clock::now();
 
-    main_camera.update();
+    float dt = stats.frametime / 1000.0f;
+    if (dt <= 0.0f) {
+        dt = 1.0f / 60.0f;
+    }
+    camera_controller.update(dt);
 
     glm::mat4 view = main_camera.get_view_matrix();
     float fov_deg = std::clamp(static_cast<float>(cvar_main_fov.get()), 10.0f, 170.0f);

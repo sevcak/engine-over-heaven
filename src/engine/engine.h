@@ -1,6 +1,7 @@
 #pragma once
 
-#include <camera.h>
+#include <camera/camera.hpp>
+#include <camera/fly_camera_controller.hpp>
 #include <vk_renderer.hpp>
 #include <vk_loader.h>
 #include <memory>
@@ -33,6 +34,7 @@ public:
     std::vector<std::shared_ptr<MeshAsset>> _test_meshes;
 
     Camera main_camera;
+    FlyCameraController camera_controller;
 
     static Engine &get();
 
