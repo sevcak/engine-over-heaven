@@ -1,23 +1,25 @@
 ﻿#pragma once
 
-#include <vk_types.h>
+#include <deque>
 #include <span>
+#include <vk_types.h>
 
-struct DescriptorLayoutBuilder {
+struct DescriptorLayoutBuilder
+{
     std::vector<VkDescriptorSetLayoutBinding> bindings;
 
     void add_binding(uint32_t binding, VkDescriptorType type);
 
     void clear();
 
-    VkDescriptorSetLayout build(VkDevice device,
-        VkShaderStageFlags shader_stages,
-        void *p_next = nullptr,
-        VkDescriptorSetLayoutCreateFlags flags = 0);
+    VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shader_stages,
+        void *p_next = nullptr, VkDescriptorSetLayoutCreateFlags flags = 0);
 };
 
-struct DescriptorAllocator {
-    struct PoolSizeRatio {
+struct DescriptorAllocator
+{
+    struct PoolSizeRatio
+    {
         VkDescriptorType type;
         float ratio;
     };
@@ -33,9 +35,11 @@ struct DescriptorAllocator {
     VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout);
 };
 
-struct DescriptorAllocatorGrowable {
+struct DescriptorAllocatorGrowable
+{
 public:
-    struct PoolSizeRatio {
+    struct PoolSizeRatio
+    {
         VkDescriptorType type;
         float ratio;
     };
@@ -56,19 +60,21 @@ private:
 
     VkDescriptorPool get_pool(VkDevice device);
 
-    VkDescriptorPool create_pool(VkDevice device,
-        uint32_t set_count, std::span<PoolSizeRatio> pool_ratios);
+    VkDescriptorPool create_pool(
+        VkDevice device, uint32_t set_count, std::span<PoolSizeRatio> pool_ratios);
 };
 
-struct DescriptorWriter {
+struct DescriptorWriter
+{
     std::deque<VkDescriptorImageInfo> image_infos;
     std::deque<VkDescriptorBufferInfo> buffer_infos;
     std::vector<VkWriteDescriptorSet> writes;
 
-    void write_image(
-        int binding, VkImageView image, VkSampler sampler, VkImageLayout layout, VkDescriptorType type);
+    void write_image(int binding, VkImageView image, VkSampler sampler, VkImageLayout layout,
+        VkDescriptorType type);
 
-    void write_buffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
+    void write_buffer(
+        int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
 
     void clear();
 

@@ -1,12 +1,16 @@
-﻿// vulkan_guide.h : Include file for standard system include files,
-// or project specific include files.
-
 #pragma once
 
+#include <SDL_events.h>
 #include <camera.h>
+#include <deque>
+#include <functional>
+#include <span>
+#include <vector>
 #include <vk_descriptors.h>
-#include <vk_loader.h>
 #include <vk_types.h>
+
+struct SDL_Window;
+class VulkanRenderer;
 
 struct DeletionQueue
 {
@@ -94,19 +98,12 @@ struct GLTFMetallic_Roughness
 
     DescriptorWriter writer;
 
-    void build_pipelines(VulkanEngine *engine);
+    void build_pipelines(VulkanRenderer *renderer);
 
     void clear_resources(VkDevice device);
 
     MaterialInstance write_material(VkDevice device, MaterialPass pass,
         const MaterialResources &resources, DescriptorAllocatorGrowable &descriptor_allocator);
-};
-
-struct MeshNode : public Node
-{
-    std::shared_ptr<MeshAsset> mesh;
-
-    virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx) override;
 };
 
 struct RenderObject
@@ -144,16 +141,12 @@ struct EngineStats
  */
 constexpr unsigned int FRAME_OVERLAP = 2;
 
-class VulkanEngine
+class VulkanRenderer
 {
 public:
     bool _is_initialized { false };
-    bool _stop_rendering { false };
-    bool _resize_requested { false };
 
     int _frame_number { 0 };
-
-    EngineStats stats;
 
     VkExtent2D _window_extent { 1920, 1080 };
 
@@ -213,8 +206,6 @@ public:
     std::vector<ComputeEffect> _background_effects;
     int _current_background_effect { 0 };
 
-    std::vector<std::shared_ptr<MeshAsset>> _test_meshes;
-
     AllocatedImage _white_image;
     AllocatedImage _black_image;
     AllocatedImage _grey_image;
@@ -226,37 +217,15 @@ public:
     MaterialInstance _default_data;
     GLTFMetallic_Roughness _metal_rough_material;
 
-    DrawContext main_draw_context;
-    std::unordered_map<std::string, std::shared_ptr<Node>> loaded_nodes;
-
-    std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loaded_scenes;
-
-    Camera main_camera;
-
-    static VulkanEngine &get();
-
-    // initializes everything in the engine
-    void init();
-
-    // shuts down the engine
+    void init(SDL_Window *window, uint32_t width, uint32_t height);
     void cleanup();
 
-    // draw loop
-    void draw();
+    void draw(DrawContext &main_draw_context, Camera &main_camera, EngineStats &stats,
+        bool &resize_requested);
 
-    // run main loop
-    void run();
-
-    /*
-     * Send commands to the GPU without syncronizing with the swapchain or the
-     * rendering logic. Uses a fence and a command buffer different from the one
-     * used in draw.
-     */
     void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
 
     GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
-
-    void update_scene();
 
     AllocatedBuffer create_buffer(
         size_t alloc_size, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
@@ -267,8 +236,9 @@ public:
         VkImageUsageFlags usage, bool mipmapped = false);
 
     void destroy_buffer(const AllocatedBuffer &buffer);
-
     void destroy_image(const AllocatedImage &img);
+
+    void resize_swapchain();
 
 private:
     void init_vulkan();
@@ -297,9 +267,8 @@ private:
 
     void draw_background(VkCommandBuffer cmd);
 
-    void draw_geometry(VkCommandBuffer cmd);
+    void draw_geometry(VkCommandBuffer cmd, DrawContext &main_draw_context, Camera &main_camera,
+        EngineStats &stats);
 
-    void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view);
-
-    void resize_swapchain();
+    void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view, EngineStats &stats);
 };

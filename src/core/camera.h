@@ -1,4 +1,7 @@
-#include <vk_types.h>
+#pragma once
+
+#include <glm/vec3.hpp>
+#include <glm/mat4x4.hpp>
 #include <SDL_events.h>
 
 class Camera {

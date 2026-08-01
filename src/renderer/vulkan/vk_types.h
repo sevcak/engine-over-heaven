@@ -1,36 +1,30 @@
-﻿// vulkan_guide.h : Include file for standard system include files,
+// vulkan_guide.h : Include file for standard system include files,
 // or project specific include files.
 #pragma once
 
 #include <memory>
-#include <optional>
-#include <string>
 #include <vector>
-#include <span>
-#include <array>
-#include <functional>
-#include <deque>
 
-#include <vulkan/vulkan.h>
-#include <vulkan/vk_enum_string_helper.h>
 #include <vk_mem_alloc.h>
+#include <vulkan/vk_enum_string_helper.h>
+#include <vulkan/vulkan.h>
 
 #include <fmt/core.h>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
-
-#define VK_CHECK(x)                                                     \
-    do {                                                                \
-        VkResult err = x;                                               \
-        if (err) {                                                      \
-            fmt::println("Detected Vulkan error: {}", string_VkResult(err)); \
-            abort();                                                    \
-        }                                                               \
+#define VK_CHECK(x)                                                                                \
+    do {                                                                                           \
+        VkResult err = x;                                                                          \
+        if (err) {                                                                                 \
+            fmt::println("Detected Vulkan error: {}", string_VkResult(err));                       \
+            abort();                                                                               \
+        }                                                                                          \
     } while (0)
 
-struct AllocatedImage {
+struct AllocatedImage
+{
     VkImage image;
     VkImageView image_view;
     VmaAllocation allocation;
@@ -38,13 +32,22 @@ struct AllocatedImage {
     VkFormat image_format;
 };
 
-struct AllocatedBuffer {
+struct AllocatedBuffer
+{
     VkBuffer buffer;
     VmaAllocation allocation;
     VmaAllocationInfo info;
 };
 
-struct Vertex {
+struct Bounds
+{
+    glm::vec3 origin;
+    float sphere_radius;
+    glm::vec3 extents;
+};
+
+struct Vertex
+{
     glm::vec3 position;
     float uv_x;
     glm::vec3 normal;
@@ -55,7 +58,8 @@ struct Vertex {
 /*
  * Structure holding the resources needed for a mesh.
  */
-struct GPUMeshBuffers {
+struct GPUMeshBuffers
+{
     AllocatedBuffer index_buffer;
     AllocatedBuffer vertex_buffer;
     VkDeviceAddress vertex_buffer_address;
@@ -64,24 +68,28 @@ struct GPUMeshBuffers {
 /*
  * Structure holding the push constants for mesh object drawing.
  */
-struct GPUDrawPushConstants {
+struct GPUDrawPushConstants
+{
     /* World/Model Matrix */
     glm::mat4 world_matrix;
     VkDeviceAddress vertex_buffer;
 };
 
-enum class MaterialPass : uint8_t {
+enum class MaterialPass : uint8_t
+{
     MainColor,
     Transparent,
     Other
 };
 
-struct MaterialPipeline {
+struct MaterialPipeline
+{
     VkPipeline pipeline;
     VkPipelineLayout layout;
 };
 
-struct MaterialInstance {
+struct MaterialInstance
+{
     MaterialPipeline *pipeline;
     VkDescriptorSet material_set;
     MaterialPass pass_type;
@@ -89,11 +97,13 @@ struct MaterialInstance {
 
 struct DrawContext;
 
-class IRenderable {
+class IRenderable
+{
     virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx) = 0;
 };
 
-struct Node : public IRenderable {
+struct Node : public IRenderable
+{
     std::weak_ptr<Node> parent;
     std::vector<std::shared_ptr<Node>> children;
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <vk_types.h>
 #include <unordered_map>
@@ -9,13 +9,6 @@
 struct GLTFMaterial
 {
     MaterialInstance data;
-};
-
-struct Bounds
-{
-    glm::vec3 origin;
-    float sphere_radius;
-    glm::vec3 extents;
 };
 
 struct GeoSurface
@@ -34,10 +27,18 @@ struct MeshAsset
     GPUMeshBuffers mesh_buffers;
 };
 
-class VulkanEngine;
+struct MeshNode : public Node
+{
+    std::shared_ptr<MeshAsset> mesh;
+
+    virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx) override;
+};
+
+class VulkanRenderer;
+struct DrawContext;
 
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
-    VulkanEngine *engine, std::filesystem::path file_path);
+    VulkanRenderer *renderer, std::filesystem::path file_path);
 
 struct LoadedGLTF : public IRenderable
 {
@@ -54,7 +55,7 @@ struct LoadedGLTF : public IRenderable
 
     AllocatedBuffer material_data_buffer;
 
-    VulkanEngine *creator;
+    VulkanRenderer *creator;
 
     ~LoadedGLTF() { clear_all(); }
 
@@ -64,4 +65,4 @@ private:
     void clear_all();
 };
 
-std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(VulkanEngine *engine, std::string_view file_path);
+std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(VulkanRenderer *renderer, std::string_view file_path);

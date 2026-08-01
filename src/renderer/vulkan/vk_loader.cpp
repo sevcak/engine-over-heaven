@@ -3,9 +3,8 @@
 #include "fastgltf/types.hpp"
 #include "stb_image.h"
 #include <iostream>
-#include <vk_loader.h>
 
-#include "vk_engine.h"
+#include "vk_renderer.hpp"
 #include "vk_types.h"
 #include <glm/gtx/quaternion.hpp>
 
@@ -14,7 +13,7 @@
 #include <fastgltf/tools.hpp>
 
 std::optional<AllocatedImage> load_image(
-    VulkanEngine *engine, fastgltf::Asset &asset, fastgltf::Image &image);
+    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image);
 
 VkFilter extract_filter(fastgltf::Filter filter)
 {
@@ -47,7 +46,7 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter)
 }
 
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
-    VulkanEngine *engine, std::filesystem::path file_path)
+    VulkanRenderer *engine, std::filesystem::path file_path)
 {
     std::cout << "Loading GLTF: " << file_path << std::endl;
 
@@ -167,7 +166,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
 }
 
 std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
-    VulkanEngine *engine, std::string_view file_path)
+    VulkanRenderer *engine, std::string_view file_path)
 {
     fmt::print("Loading GLTF: {}\n", file_path);
 
@@ -508,7 +507,7 @@ void LoadedGLTF::clear_all()
 }
 
 std::optional<AllocatedImage> load_image(
-    VulkanEngine *engine, fastgltf::Asset &asset, fastgltf::Image &image)
+    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image)
 {
     AllocatedImage new_image {};
 
@@ -591,4 +590,28 @@ std::optional<AllocatedImage> load_image(
     }
 
     return new_image;
+}
+
+void MeshNode::draw(const glm::mat4 &top_matrix, DrawContext &ctx)
+{
+    glm::mat4 node_matrix = top_matrix * world_transform;
+
+    for (auto &s : mesh->surfaces) {
+        RenderObject def;
+        def.index_count = s.count;
+        def.first_index = s.start_index;
+        def.index_buffer = mesh->mesh_buffers.index_buffer.buffer;
+        def.material = &s.material->data;
+        def.bounds = s.bounds;
+        def.transform = node_matrix;
+        def.vertex_buffer_address = mesh->mesh_buffers.vertex_buffer_address;
+
+        if (s.material->data.pass_type == MaterialPass::Transparent) {
+            ctx.transparent_surfaces.push_back(def);
+        } else {
+            ctx.opaque_surfaces.push_back(def);
+        }
+    }
+
+    Node::draw(top_matrix, ctx);
 }
