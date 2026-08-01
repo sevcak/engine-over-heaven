@@ -56,8 +56,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
         return {};
     }
 
-    constexpr auto gltf_options =
-        fastgltf::Options::LoadGLBBuffers | fastgltf::Options::LoadExternalBuffers;
+    constexpr auto gltf_options = fastgltf::Options::LoadExternalBuffers;
 
     fastgltf::Asset gltf;
     fastgltf::Parser parser {};
@@ -177,7 +176,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
     fastgltf::Parser parser {};
 
     const auto gltf_options = fastgltf::Options::DontRequireValidAssetMember |
-                              fastgltf::Options::AllowDouble | fastgltf::Options::LoadGLBBuffers |
+                              fastgltf::Options::AllowDouble |
                               fastgltf::Options::LoadExternalBuffers;
     // | fastgltf::Options::LoadExternalImages;
 
