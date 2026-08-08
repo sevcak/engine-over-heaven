@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <vk_gpu_data.hpp>
 #include <vk_images.h>
 #include <vk_initializers.h>
 #include <vk_loader.h>
@@ -98,6 +99,7 @@ void VulkanRenderer::init(SDL_Window *window, uint32_t width, uint32_t height)
     init_descriptors();
     init_pipelines();
     init_default_data();
+    init_object_buffers();
     init_imgui();
 
     _is_initialized = true;
@@ -442,6 +444,7 @@ void VulkanRenderer::init_descriptors()
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         _gpu_scene_data_descriptor_layout =
             builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     }
@@ -707,6 +710,16 @@ void VulkanRenderer::init_default_data()
         _device, MaterialPass::MainColor, material_resources, _global_descriptor_allocator);
 }
 
+void VulkanRenderer::init_object_buffers()
+{
+    for (std::size_t i = 0; i < FRAME_OVERLAP; i++) {
+        _frames[i].object_buffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        _main_deletion_queue.push_function(
+            [this, i]() { destroy_buffer(_frames[i].object_buffer); });
+    }
+}
+
 void VulkanRenderer::create_swapchain(uint32_t width, uint32_t height)
 {
     vkb::SwapchainBuilder swapchain_builder { _chosen_gpu, _device, _surface };
@@ -839,6 +852,8 @@ void VulkanRenderer::draw_geometry(
     DescriptorWriter writer;
     writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_buffer(1, get_current_frame().object_buffer.buffer,
+        sizeof(GPUObjectData) * MAX_OBJECTS, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     writer.update_set(_device, global_descriptor);
 
     VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
@@ -875,7 +890,7 @@ void VulkanRenderer::draw_geometry(
     MaterialInstance *last_material = nullptr;
     VkBuffer last_index_buffer = VK_NULL_HANDLE;
 
-    auto draw_obj = [&](const RenderObject &r) {
+    auto draw_obj = [&](const RenderObject &r, uint32_t instance_idx) {
         if (r.material != last_material) {
             last_material = r.material;
 
@@ -916,24 +931,40 @@ void VulkanRenderer::draw_geometry(
             vkCmdBindIndexBuffer(cmd, r.index_buffer, 0, VK_INDEX_TYPE_UINT32);
         }
 
-        GPUDrawPushConstants push_constants;
-        push_constants.world_matrix = r.transform;
-        push_constants.vertex_buffer = r.vertex_buffer_address;
-        vkCmdPushConstants(cmd, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-            sizeof(GPUDrawPushConstants), &push_constants);
-
-        vkCmdDrawIndexed(cmd, r.index_count, 1, r.first_index, 0, 0);
+        vkCmdDrawIndexed(cmd, r.index_count, 1, r.first_index, 0, instance_idx);
 
         stats.drawcall_count++;
         stats.triangle_count += r.index_count / 3;
     };
 
+    // Copy the objects to the GPU.
+
+    // Get mapped pointer for the SSBO.
+    GPUObjectData *obj_buf =
+        (GPUObjectData *)_frames[_frame_number % FRAME_OVERLAP].object_buffer.info.pMappedData;
+    std::size_t obj_idx = 0;
     for (auto r_idx : opaque_draws) {
-        draw_obj(main_draw_context.opaque_surfaces[r_idx]);
+        obj_buf[obj_idx].world_matrix = main_draw_context.opaque_surfaces[r_idx].transform;
+        obj_buf[obj_idx].vertex_buffer =
+            main_draw_context.opaque_surfaces[r_idx].vertex_buffer_address;
+        obj_idx++;
+    }
+    for (auto r_idx : transparent_draws) {
+        obj_buf[obj_idx].world_matrix = main_draw_context.transparent_surfaces[r_idx].transform;
+        obj_buf[obj_idx].vertex_buffer =
+            main_draw_context.transparent_surfaces[r_idx].vertex_buffer_address;
+        obj_idx++;
+    }
+
+    uint32_t current_instance = 0;
+    for (auto r_idx : opaque_draws) {
+        draw_obj(main_draw_context.opaque_surfaces[r_idx], current_instance);
+        current_instance++;
     }
 
     for (auto r_idx : transparent_draws) {
-        draw_obj(main_draw_context.transparent_surfaces[r_idx]);
+        draw_obj(main_draw_context.transparent_surfaces[r_idx], current_instance);
+        current_instance++;
     }
 
     main_draw_context.opaque_surfaces.clear();

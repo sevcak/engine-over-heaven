@@ -2,6 +2,7 @@
 
 #include <SDL_events.h>
 #include <camera/camera.hpp>
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <span>
@@ -39,6 +40,8 @@ struct FrameData
     DeletionQueue deletion_queue;
 
     DescriptorAllocatorGrowable frame_descriptors;
+
+    AllocatedBuffer object_buffer;
 };
 
 struct ComputePushConstants
@@ -241,6 +244,8 @@ public:
     void resize_swapchain();
 
 private:
+    constexpr static std::size_t MAX_OBJECTS = 10000;
+
     void init_vulkan();
 
     void init_swapchain();
@@ -260,6 +265,8 @@ private:
     void init_imgui();
 
     void init_default_data();
+
+    void init_object_buffers();
 
     void create_swapchain(uint32_t width, uint32_t height);
 
