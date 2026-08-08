@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <cstdlib>
 #include <vk_gpu_data.hpp>
 #include <vk_images.h>
 #include <vk_initializers.h>
@@ -16,6 +17,7 @@
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
 #include "imgui.h"
@@ -153,6 +155,9 @@ void VulkanRenderer::draw(
     if (e == VK_ERROR_OUT_OF_DATE_KHR) {
         resize_requested = true;
         return;
+    } else if (e != VK_SUCCESS && e != VK_SUBOPTIMAL_KHR) {
+        fmt::println("Failed to acquire swapchain image: {}", string_VkResult(e));
+        abort();
     }
 
     VkCommandBuffer cmd = get_current_frame().main_command_buffer;
@@ -233,6 +238,10 @@ void VulkanRenderer::draw(
     VkResult present_result = vkQueuePresentKHR(_graphics_queue, &present_info);
     if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         resize_requested = true;
+        return;
+    } else if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) {
+        fmt::println("Failed to present swapchain image: {}", string_VkResult(present_result));
+        abort();
     }
 
     _frame_number++;
