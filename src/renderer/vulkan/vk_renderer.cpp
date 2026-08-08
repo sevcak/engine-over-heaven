@@ -264,6 +264,8 @@ void VulkanRenderer::init_vulkan()
 
     SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
+    VkPhysicalDeviceFeatures features = { .multiDrawIndirect = true };
+
     VkPhysicalDeviceVulkan13Features features13 {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
     };
@@ -278,6 +280,7 @@ void VulkanRenderer::init_vulkan()
 
     vkb::PhysicalDeviceSelector selector { vkb_inst };
     vkb::PhysicalDevice physical_device = selector.set_minimum_version(1, 3)
+                                              .set_required_features(features)
                                               .set_required_features_13(features13)
                                               .set_required_features_12(features12)
                                               .set_surface(_surface)
@@ -726,6 +729,13 @@ void VulkanRenderer::init_object_buffers()
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         _main_deletion_queue.push_function(
             [this, i]() { destroy_buffer(_frames[i].object_buffer); });
+
+        _frames[i].indirect_buffer =
+            create_buffer(sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
+                VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU);
+        _main_deletion_queue.push_function(
+            [this, i]() { destroy_buffer(_frames[i].indirect_buffer); });
     }
 }
 
@@ -895,55 +905,56 @@ void VulkanRenderer::draw_geometry(
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    MaterialPipeline *last_pipeline = nullptr;
+    // Get mapped pointer for the indirect buffer.
+    VkDrawIndexedIndirectCommand *indirect_commands =
+        (VkDrawIndexedIndirectCommand *)_frames[_frame_number % FRAME_OVERLAP]
+            .indirect_buffer.info.pMappedData;
+
+    // Track the batching state.
     MaterialInstance *last_material = nullptr;
     VkBuffer last_index_buffer = VK_NULL_HANDLE;
+    uint32_t batch_start = 0;
+    uint32_t batch_count = 0;
 
-    auto draw_obj = [&](const RenderObject &r, uint32_t instance_idx) {
-        if (r.material != last_material) {
-            last_material = r.material;
+    auto flush_batch = [&]() {
+        if (batch_count == 0)
+            return;
 
-            if (r.material->pipeline != last_pipeline) {
-                last_pipeline = r.material->pipeline;
-                vkCmdBindPipeline(
-                    cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    r.material->pipeline->layout, 0, 1, &global_descriptor, 0, nullptr);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    r.material->pipeline->layout, 1, 1, &r.material->material_set, 0, nullptr);
+        // Bind the state for this batch.
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, last_material->pipeline->pipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            last_material->pipeline->layout, 0, 1, &global_descriptor, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            last_material->pipeline->layout, 1, 1, &last_material->material_set, 0, nullptr);
 
-                VkViewport vp = {};
-                vp.x = 0;
-                vp.y = 0;
-                vp.width = (float)_window_extent.width;
-                vp.height = (float)_window_extent.height;
-                vp.minDepth = 0.0f;
-                vp.maxDepth = 1.0f;
+        VkViewport vp = {
+            .x = 0,
+            .y = 0,
+            .width = (float)_window_extent.width,
+            .height = (float)_window_extent.height,
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        };
+        vkCmdSetViewport(cmd, 0, 1, &vp);
 
-                vkCmdSetViewport(cmd, 0, 1, &vp);
+        VkRect2D sc;
+        sc.offset.x = 0;
+        sc.offset.y = 0;
+        sc.extent.width = _window_extent.width;
+        sc.extent.height = _window_extent.height;
+        vkCmdSetScissor(cmd, 0, 1, &sc);
 
-                VkRect2D sc = {};
-                sc.offset.x = 0;
-                sc.offset.y = 0;
-                sc.extent.width = _window_extent.width;
-                sc.extent.height = _window_extent.height;
+        vkCmdBindIndexBuffer(cmd, last_index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
-                vkCmdSetScissor(cmd, 0, 1, &sc);
-            }
-
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                r.material->pipeline->layout, 1, 1, &r.material->material_set, 0, nullptr);
-        }
-
-        if (r.index_buffer != last_index_buffer) {
-            last_index_buffer = r.index_buffer;
-            vkCmdBindIndexBuffer(cmd, r.index_buffer, 0, VK_INDEX_TYPE_UINT32);
-        }
-
-        vkCmdDrawIndexed(cmd, r.index_count, 1, r.first_index, 0, instance_idx);
-
+        uint32_t offset = batch_start * sizeof(VkDrawIndexedIndirectCommand);
+        uint32_t stride = sizeof(VkDrawIndexedIndirectCommand);
+        vkCmdDrawIndexedIndirect(
+            cmd, get_current_frame().indirect_buffer.buffer, offset, batch_count, stride);
         stats.drawcall_count++;
-        stats.triangle_count += r.index_count / 3;
+
+        // Move the start index forward for the next batch.
+        batch_start += batch_count;
+        batch_count = 0;
     };
 
     // Copy the objects to the GPU.
@@ -966,15 +977,40 @@ void VulkanRenderer::draw_geometry(
     }
 
     uint32_t current_instance = 0;
-    for (auto r_idx : opaque_draws) {
-        draw_obj(main_draw_context.opaque_surfaces[r_idx], current_instance);
-        current_instance++;
-    }
+    auto process_draw_list = [&](const std::vector<uint32_t> &draws,
+                                 const std::vector<RenderObject> &surfaces) {
+        for (auto r_idx : draws) {
+            const RenderObject &r = surfaces[r_idx];
 
-    for (auto r_idx : transparent_draws) {
-        draw_obj(main_draw_context.transparent_surfaces[r_idx], current_instance);
-        current_instance++;
-    }
+            // If the material of index buffer chagnes,
+            // the batch must be flushed and a new one must be be started.
+            if (r.material != last_material || r.index_buffer != last_index_buffer) {
+                flush_batch();
+                last_material = r.material;
+                last_index_buffer = r.index_buffer;
+            }
+
+            // Write the command for this specific object.
+            indirect_commands[current_instance].indexCount = r.index_count;
+            indirect_commands[current_instance].instanceCount = 1;
+            indirect_commands[current_instance].firstIndex = r.first_index;
+            indirect_commands[current_instance].vertexOffset = 0;
+            indirect_commands[current_instance].firstInstance = current_instance;
+
+            stats.triangle_count += r.index_count / 3;
+
+            batch_count++;
+            current_instance++;
+        }
+
+        flush_batch();
+    };
+
+    process_draw_list(opaque_draws, main_draw_context.opaque_surfaces);
+    last_material = nullptr;
+    last_index_buffer = VK_NULL_HANDLE;
+
+    process_draw_list(transparent_draws, main_draw_context.transparent_surfaces);
 
     main_draw_context.opaque_surfaces.clear();
     main_draw_context.transparent_surfaces.clear();

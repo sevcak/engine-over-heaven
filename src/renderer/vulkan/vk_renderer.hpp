@@ -42,6 +42,7 @@ struct FrameData
     DescriptorAllocatorGrowable frame_descriptors;
 
     AllocatedBuffer object_buffer;
+    AllocatedBuffer indirect_buffer;
 };
 
 struct ComputePushConstants
