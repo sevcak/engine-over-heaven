@@ -25,6 +25,7 @@
 #include "imgui_impl_vulkan.h"
 
 #include "VkBootstrap.h"
+#include "vk_types.h"
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
@@ -39,54 +40,32 @@ static AutoCVar_Int cvar_cull(
 
 constexpr bool use_validation_layers = true;
 
-bool is_visible(RenderObject &obj, const glm::mat4 &viewproj)
-{
-    if (cvar_cull.get() == 0) {
-        return true;
-    }
-
-    std::array<glm::vec3, 8> corners {
-        glm::vec3 { 1.f, 1.f, 1.f },
-        glm::vec3 { 1.f, 1.f, -1.f },
-        glm::vec3 { 1.f, -1.f, 1.f },
-        glm::vec3 { 1.f, -1.f, -1.f },
-        glm::vec3 { -1.f, 1.f, 1.f },
-        glm::vec3 { -1.f, 1.f, -1.f },
-        glm::vec3 { -1.f, -1.f, 1.f },
-        glm::vec3 { -1.f, -1.f, -1.f },
-    };
-
-    glm::mat4 matrix = viewproj * obj.transform;
-
-    glm::vec3 min = { 1.5, 1.5, 1.5 };
-    glm::vec3 max = { -1.5, -1.5, -1.5 };
-
-    for (int c = 0; c < 8; c++) {
-        // Project corner into clip space.
-        glm::vec4 v =
-            matrix * glm::vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.0f);
-
-        // Perspective correction.
-        v.x /= v.w;
-        v.y /= v.w;
-        v.z /= v.w;
-
-        min = glm::min(glm::vec3 { v }, min);
-        max = glm::max(glm::vec3 { v }, max);
-    }
-
-    // Check the clip space box is within view.
-    if (min.z > 1.0f || max.z < 0.0f || min.x > 1.0f || max.x < -1.0f || min.y > 1.0f ||
-        max.y < -1.f) {
-        return false;
-    }
-    return true;
-}
-
 void EngineStats::reset_counters()
 {
     drawcall_count = 0;
-    triangle_count = 0;
+    visible_triangle_count = 0;
+    total_triangle_count = 0;
+}
+
+void CullPushConstants::extract_frustum_planes(const glm::mat4 &vp)
+{
+    glm::vec4 row0 = glm::vec4(vp[0][0], vp[1][0], vp[2][0], vp[3][0]);
+    glm::vec4 row1 = glm::vec4(vp[0][1], vp[1][1], vp[2][1], vp[3][1]);
+    glm::vec4 row2 = glm::vec4(vp[0][2], vp[1][2], vp[2][2], vp[3][2]);
+    glm::vec4 row3 = glm::vec4(vp[0][3], vp[1][3], vp[2][3], vp[3][3]);
+
+    frustum_planes[0] = row3 + row0; // Left.
+    frustum_planes[1] = row3 - row0; // Right.
+    frustum_planes[2] = row3 + row1; // Bottom.
+    frustum_planes[3] = row3 - row1; // Top.
+    frustum_planes[4] = row3 + row2; // Near.
+    frustum_planes[5] = row3 - row2; // Far.
+
+    // Normalize the planes.
+    for (int i = 0; i < 6; i++) {
+        float l = glm::length(glm::vec3(frustum_planes[i]));
+        frustum_planes[i] /= l;
+    }
 }
 
 void VulkanRenderer::init(SDL_Window *window, uint32_t width, uint32_t height)
@@ -264,7 +243,9 @@ void VulkanRenderer::init_vulkan()
 
     SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
-    VkPhysicalDeviceFeatures features = { .multiDrawIndirect = true };
+    VkPhysicalDeviceFeatures features {};
+    features.multiDrawIndirect = true;
+    features.drawIndirectFirstInstance = true;
 
     VkPhysicalDeviceVulkan13Features features13 {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
@@ -414,7 +395,7 @@ void VulkanRenderer::init_descriptors()
 {
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 }
     };
 
     _global_descriptor_allocator.init(_device, 10, sizes);
@@ -471,12 +452,27 @@ void VulkanRenderer::init_descriptors()
     }
     _main_deletion_queue.push_function(
         [&]() { vkDestroyDescriptorSetLayout(_device, _single_image_descriptor_layout, nullptr); });
+
+    DescriptorLayoutBuilder compute_builder;
+    compute_builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Object buffer.
+    compute_builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Indirect buffer.
+    compute_builder.add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render stats buffer.
+    _compute_descriptor_layout = compute_builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    for (int i = 0; i < FRAME_OVERLAP; i++) {
+        _frames[i].compute_descriptor =
+            _global_descriptor_allocator.allocate(_device, _compute_descriptor_layout);
+    }
+    _main_deletion_queue.push_function([=, this]() {
+        vkDestroyDescriptorSetLayout(_device, _compute_descriptor_layout, nullptr);
+    });
 }
 
 void VulkanRenderer::init_pipelines()
 {
     init_background_pipelines();
     init_mesh_pipeline();
+    init_compute_pipeline();
     _metal_rough_material.build_pipelines(this);
 }
 
@@ -603,6 +599,46 @@ void VulkanRenderer::init_mesh_pipeline()
     _main_deletion_queue.push_function([&]() {
         vkDestroyPipelineLayout(_device, _mesh_pipeline_layout, nullptr);
         vkDestroyPipeline(_device, _mesh_pipeline, nullptr);
+    });
+}
+
+void VulkanRenderer::init_compute_pipeline()
+{
+    VkShaderModule cull_shader;
+    if (!vkutil::load_shader_module("../shaders/cull.comp.spv", _device, &cull_shader)) {
+        fmt::println("Error building the cull shader.");
+        abort();
+    }
+
+    VkPipelineLayoutCreateInfo compute_layout_info = vkinit::pipeline_layout_create_info();
+    compute_layout_info.setLayoutCount = 1;
+    compute_layout_info.pSetLayouts = &_compute_descriptor_layout;
+
+    VkPushConstantRange push_constant {};
+    push_constant.offset = 0;
+    push_constant.size = sizeof(CullPushConstants);
+    push_constant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    compute_layout_info.pPushConstantRanges = &push_constant;
+    compute_layout_info.pushConstantRangeCount = 1;
+
+    VK_CHECK(
+        vkCreatePipelineLayout(_device, &compute_layout_info, nullptr, &_cull_pipeline_layout));
+
+    VkComputePipelineCreateInfo compute_pipeline_info {};
+    compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    compute_pipeline_info.layout = _cull_pipeline_layout;
+    compute_pipeline_info.stage =
+        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, cull_shader);
+
+    VK_CHECK(vkCreateComputePipelines(
+        _device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_cull_pipeline));
+
+    vkDestroyShaderModule(_device, cull_shader, nullptr);
+
+    _main_deletion_queue.push_function([=, this]() {
+        vkDestroyPipelineLayout(_device, _cull_pipeline_layout, nullptr);
+        vkDestroyPipeline(_device, _cull_pipeline, nullptr);
     });
 }
 
@@ -736,6 +772,11 @@ void VulkanRenderer::init_object_buffers()
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
         _main_deletion_queue.push_function(
             [this, i]() { destroy_buffer(_frames[i].indirect_buffer); });
+
+        _frames[i].render_stats_buffer = create_buffer(sizeof(GPURenderStats),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU);
+        _main_deletion_queue.push_function(
+            [this, i]() { destroy_buffer(_frames[i].render_stats_buffer); });
     }
 }
 
@@ -772,6 +813,7 @@ AllocatedBuffer VulkanRenderer::create_buffer(
     VmaAllocationCreateInfo vma_alloc_info = {};
     vma_alloc_info.usage = memory_usage;
     vma_alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    vma_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
     AllocatedBuffer new_buffer;
 
@@ -815,15 +857,17 @@ void VulkanRenderer::draw_geometry(
     VkCommandBuffer cmd, DrawContext &main_draw_context, Camera &main_camera, EngineStats &stats)
 {
     stats.reset_counters();
+    GPURenderStats *gpu_stats_ptr =
+        (GPURenderStats *)get_current_frame().render_stats_buffer.info.pMappedData;
+    stats.visible_triangle_count = gpu_stats_ptr->visible_triangles;
+    memset(gpu_stats_ptr, 0, sizeof(GPURenderStats));
 
     auto start_time = std::chrono::system_clock::now();
 
     std::vector<uint32_t> opaque_draws;
     opaque_draws.reserve(main_draw_context.opaque_surfaces.size());
     for (uint32_t i = 0; i < main_draw_context.opaque_surfaces.size(); i++) {
-        if (is_visible(main_draw_context.opaque_surfaces[i], scene_data.viewproj)) {
-            opaque_draws.push_back(i);
-        }
+        opaque_draws.push_back(i);
     }
     std::sort(opaque_draws.begin(), opaque_draws.end(), [&](uint32_t i_a, uint32_t i_b) -> bool {
         const RenderObject &a = main_draw_context.opaque_surfaces[i_a];
@@ -838,9 +882,7 @@ void VulkanRenderer::draw_geometry(
     std::vector<uint32_t> transparent_draws;
     transparent_draws.reserve(main_draw_context.transparent_surfaces.size());
     for (uint32_t i = 0; i < main_draw_context.transparent_surfaces.size(); i++) {
-        if (is_visible(main_draw_context.transparent_surfaces[i], scene_data.viewproj)) {
-            transparent_draws.push_back(i);
-        }
+        transparent_draws.push_back(i);
     }
     std::sort(transparent_draws.begin(), transparent_draws.end(),
         [&](uint32_t i_a, uint32_t i_b) -> bool {
@@ -868,24 +910,95 @@ void VulkanRenderer::draw_geometry(
     VkDescriptorSet global_descriptor =
         get_current_frame().frame_descriptors.allocate(_device, _gpu_scene_data_descriptor_layout);
 
-    DescriptorWriter writer;
-    writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    writer.write_buffer(1, get_current_frame().object_buffer.buffer,
-        sizeof(GPUObjectData) * MAX_OBJECTS, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    writer.update_set(_device, global_descriptor);
+    {
+        DescriptorWriter writer;
+        writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        writer.write_buffer(1, get_current_frame().object_buffer.buffer,
+            sizeof(GPUObjectData) * MAX_OBJECTS, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.update_set(_device, global_descriptor);
+    }
+
+    {
+        DescriptorWriter compute_writer;
+        compute_writer.write_buffer(0, get_current_frame().object_buffer.buffer,
+            sizeof(GPUObjectData) * MAX_OBJECTS, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        compute_writer.write_buffer(1, get_current_frame().indirect_buffer.buffer,
+            sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS, 0,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        compute_writer.write_buffer(2, get_current_frame().render_stats_buffer.buffer,
+            sizeof(GPURenderStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+        compute_writer.update_set(_device, get_current_frame().compute_descriptor);
+    }
 
     VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
         _draw_image.image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo depth_attachment = vkinit::depth_attachment_info(
         _depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
+    // Get mapped pointer for the indirect buffer.
+    VkDrawIndexedIndirectCommand *indirect_commands =
+        (VkDrawIndexedIndirectCommand *)_frames[_frame_number % FRAME_OVERLAP]
+            .indirect_buffer.info.pMappedData;
+    memset(indirect_commands, 0, sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS);
+
+    uint32_t current_instance = 0;
+    auto build_indirect_buffer = [&](const std::vector<uint32_t> &draws,
+                                     const std::vector<RenderObject> &surfaces) {
+        for (auto r_idx : draws) {
+            if (current_instance >= MAX_OBJECTS) {
+                fmt::println("Warning: Exceeded MAX_OBJECTS in build_indirect_buffer");
+                break;
+            }
+            const RenderObject &r = surfaces[r_idx];
+            indirect_commands[current_instance].indexCount = r.index_count;
+            indirect_commands[current_instance].instanceCount = 0;
+            indirect_commands[current_instance].firstIndex = r.first_index;
+            indirect_commands[current_instance].vertexOffset = 0;
+            indirect_commands[current_instance].firstInstance = current_instance;
+
+            current_instance++;
+        }
+    };
+    build_indirect_buffer(opaque_draws, main_draw_context.opaque_surfaces);
+    build_indirect_buffer(transparent_draws, main_draw_context.transparent_surfaces);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline_layout, 0, 1,
+        &get_current_frame().compute_descriptor, 0, nullptr);
+
+    uint32_t total_objects = opaque_draws.size() + transparent_draws.size();
+    if (total_objects > MAX_OBJECTS) {
+        total_objects = MAX_OBJECTS;
+    }
+    CullPushConstants pc;
+    pc.extract_frustum_planes(scene_data.viewproj);
+    pc.object_count = total_objects;
+    pc.cull_enabled = cvar_cull.get();
+    vkCmdPushConstants(
+        cmd, _cull_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPushConstants), &pc);
+
+    vkCmdDispatch(cmd, (total_objects / 256) + 1, 1, 1);
+
+    VkMemoryBarrier2 memory_barrier {};
+    memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    memory_barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    // The Command Fetcher needs to read the Indirect Buffer before drawing starts.
+    memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+    memory_barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+
+    VkDependencyInfo dep_info {};
+    dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep_info.memoryBarrierCount = 1;
+    dep_info.pMemoryBarriers = &memory_barrier;
+
+    vkCmdPipelineBarrier2(cmd, &dep_info);
+
     VkRenderingInfo render_info =
         vkinit::rendering_info(_draw_extent, &color_attachment, &depth_attachment);
-
     vkCmdBeginRendering(cmd, &render_info);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mesh_pipeline);
 
     VkViewport viewport = {};
     viewport.x = 0;
@@ -904,11 +1017,6 @@ void VulkanRenderer::draw_geometry(
     scissor.extent.height = _draw_extent.height;
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    // Get mapped pointer for the indirect buffer.
-    VkDrawIndexedIndirectCommand *indirect_commands =
-        (VkDrawIndexedIndirectCommand *)_frames[_frame_number % FRAME_OVERLAP]
-            .indirect_buffer.info.pMappedData;
 
     // Track the batching state.
     MaterialInstance *last_material = nullptr;
@@ -964,22 +1072,30 @@ void VulkanRenderer::draw_geometry(
         (GPUObjectData *)_frames[_frame_number % FRAME_OVERLAP].object_buffer.info.pMappedData;
     std::size_t obj_idx = 0;
     for (auto r_idx : opaque_draws) {
-        obj_buf[obj_idx].world_matrix = main_draw_context.opaque_surfaces[r_idx].transform;
-        obj_buf[obj_idx].vertex_buffer =
-            main_draw_context.opaque_surfaces[r_idx].vertex_buffer_address;
+        if (obj_idx >= MAX_OBJECTS)
+            break;
+        const RenderObject &r_obj = main_draw_context.opaque_surfaces[r_idx];
+        obj_buf[obj_idx].world_matrix = r_obj.transform;
+        obj_buf[obj_idx].sphere_bounds = glm::vec4(r_obj.bounds.origin, r_obj.bounds.sphere_radius);
+        obj_buf[obj_idx].vertex_buffer = r_obj.vertex_buffer_address;
         obj_idx++;
     }
     for (auto r_idx : transparent_draws) {
-        obj_buf[obj_idx].world_matrix = main_draw_context.transparent_surfaces[r_idx].transform;
-        obj_buf[obj_idx].vertex_buffer =
-            main_draw_context.transparent_surfaces[r_idx].vertex_buffer_address;
+        if (obj_idx >= MAX_OBJECTS)
+            break;
+        const RenderObject &r_obj = main_draw_context.transparent_surfaces[r_idx];
+        obj_buf[obj_idx].world_matrix = r_obj.transform;
+        obj_buf[obj_idx].sphere_bounds = glm::vec4(r_obj.bounds.origin, r_obj.bounds.sphere_radius);
+        obj_buf[obj_idx].vertex_buffer = r_obj.vertex_buffer_address;
         obj_idx++;
     }
 
-    uint32_t current_instance = 0;
-    auto process_draw_list = [&](const std::vector<uint32_t> &draws,
-                                 const std::vector<RenderObject> &surfaces) {
+    current_instance = 0;
+    auto record_draw_commands = [&](const std::vector<uint32_t> &draws,
+                                    const std::vector<RenderObject> &surfaces) {
         for (auto r_idx : draws) {
+            if (current_instance >= MAX_OBJECTS)
+                break;
             const RenderObject &r = surfaces[r_idx];
 
             // If the material of index buffer chagnes,
@@ -990,15 +1106,7 @@ void VulkanRenderer::draw_geometry(
                 last_index_buffer = r.index_buffer;
             }
 
-            // Write the command for this specific object.
-            indirect_commands[current_instance].indexCount = r.index_count;
-            indirect_commands[current_instance].instanceCount = 1;
-            indirect_commands[current_instance].firstIndex = r.first_index;
-            indirect_commands[current_instance].vertexOffset = 0;
-            indirect_commands[current_instance].firstInstance = current_instance;
-
-            stats.triangle_count += r.index_count / 3;
-
+            stats.total_triangle_count += r.index_count / 3;
             batch_count++;
             current_instance++;
         }
@@ -1006,11 +1114,11 @@ void VulkanRenderer::draw_geometry(
         flush_batch();
     };
 
-    process_draw_list(opaque_draws, main_draw_context.opaque_surfaces);
+    record_draw_commands(opaque_draws, main_draw_context.opaque_surfaces);
     last_material = nullptr;
     last_index_buffer = VK_NULL_HANDLE;
 
-    process_draw_list(transparent_draws, main_draw_context.transparent_surfaces);
+    record_draw_commands(transparent_draws, main_draw_context.transparent_surfaces);
 
     main_draw_context.opaque_surfaces.clear();
     main_draw_context.transparent_surfaces.clear();

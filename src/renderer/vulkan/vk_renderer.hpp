@@ -3,12 +3,14 @@
 #include <SDL_events.h>
 #include <camera/camera.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <span>
 #include <vector>
 #include <vk_descriptors.h>
 #include <vk_types.h>
+#include <vulkan/vulkan_core.h>
 
 struct SDL_Window;
 class VulkanRenderer;
@@ -43,6 +45,32 @@ struct FrameData
 
     AllocatedBuffer object_buffer;
     AllocatedBuffer indirect_buffer;
+    AllocatedBuffer render_stats_buffer;
+
+    VkDescriptorSet compute_descriptor;
+};
+
+struct CullPushConstants
+{
+    glm::vec4 frustum_planes[6];
+    uint32_t object_count;
+    uint32_t cull_enabled;
+
+    /**
+     * Extract frustum planes from the view-projection matrix and store them into
+     * `.frustum_planes`.
+     *
+     * Frustum planes are stored in the following order:
+     *     - `0`: Left plane
+     *     - `1`: Right plane
+     *     - `2`: Bottom plane
+     *     - `3`: Top plane
+     *     - `4`: Near plane
+     *     - `5`: Far plane
+     *
+     * @param vp View-projection matrix.
+     */
+    void extract_frustum_planes(const glm::mat4 &vp);
 };
 
 struct ComputePushConstants
@@ -131,7 +159,8 @@ struct DrawContext
 struct EngineStats
 {
     float frametime;
-    int triangle_count;
+    int visible_triangle_count;
+    int total_triangle_count;
     int drawcall_count;
     float scene_update_time;
     float mesh_draw_time;
@@ -198,10 +227,15 @@ public:
 
     VkDescriptorSetLayout _gpu_scene_data_descriptor_layout;
 
+    VkDescriptorSetLayout _compute_descriptor_layout;
+
     VkPipelineLayout _gradient_pipeline_layout;
 
     VkPipelineLayout _mesh_pipeline_layout;
     VkPipeline _mesh_pipeline;
+
+    VkPipelineLayout _cull_pipeline_layout;
+    VkPipeline _cull_pipeline;
 
     VkFence _imm_fence;
     VkCommandBuffer _imm_cmd_buffer;
@@ -245,7 +279,7 @@ public:
     void resize_swapchain();
 
 private:
-    constexpr static std::size_t MAX_OBJECTS = 10000;
+    constexpr static std::size_t MAX_OBJECTS = 100000;
 
     void init_vulkan();
 
@@ -262,6 +296,8 @@ private:
     void init_background_pipelines();
 
     void init_mesh_pipeline();
+
+    void init_compute_pipeline();
 
     void init_imgui();
 

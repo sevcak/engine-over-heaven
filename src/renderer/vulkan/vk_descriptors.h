@@ -50,6 +50,9 @@ public:
 
     void destroy_pools(VkDevice device);
 
+    VkDescriptorSet try_allocate(
+        VkDevice device, VkDescriptorSetLayout layout, void *p_next = nullptr);
+
     VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout, void *p_next = nullptr);
 
 private:

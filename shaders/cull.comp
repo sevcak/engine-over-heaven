@@ -1,0 +1,77 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "gpu_types.glsl"
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout (std430, set = 0, binding = 0) readonly buffer ObjectBuffer
+{
+    GPUObjectData objects[];
+};
+
+layout (std430, set = 0, binding = 1) buffer IndirectCommands
+{
+    VkDrawIndexedIndirectCommand commands[];
+};
+
+layout (std430, set = 0, binding = 2) buffer RenderStatsBuffer
+{
+    uint visible_triangles;
+};
+
+layout (push_constant) uniform constants
+{
+    vec4 frustum_planes[6];
+    uint object_count;
+    uint cull_enabled;
+} push_constants;
+
+bool is_visible(vec4 bounds, mat4 world_matrix)
+{
+    // Transform local origin into world space.
+    vec3 sphere_center = vec3(world_matrix * vec4(bounds.xyz, 1.0));
+
+    // Find maximum scale axis of the model matrix to scale our radius.
+    float scale_x = length(vec3(world_matrix[0]));
+    float scale_y = length(vec3(world_matrix[1]));
+    float scale_z = length(vec3(world_matrix[2]));
+    float max_scale = max(scale_x, max(scale_y, scale_z));
+
+    float sphere_radius = bounds.w * max_scale;
+
+    bool is_visible = true;
+    for (int i = 0; i < 6; i++) {
+        vec4 plane = push_constants.frustum_planes[i];
+
+        // Compute the distance from the sphere center to the plane.
+        float dist = dot(plane.xyz, sphere_center) + plane.w;
+
+        if (dist < -sphere_radius) {
+            return false;
+        }
+    }
+
+    return true;
+}
+ 
+void main()
+{
+    uint object_index = gl_GlobalInvocationID.x;
+    if (object_index >= push_constants.object_count) {
+        return;
+    }
+
+    bool visible = true;
+    if (push_constants.cull_enabled != 0) {
+        visible = is_visible(objects[object_index].sphere_bounds, objects[object_index].world_matrix);
+    }
+
+    if (visible) {
+        commands[object_index].instance_count = 1;
+        atomicAdd(visible_triangles, commands[object_index].index_count / 3);
+    } else {
+        commands[object_index].instance_count = 0;
+    }
+}

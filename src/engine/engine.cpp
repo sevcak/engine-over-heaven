@@ -3,10 +3,10 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-#include <chrono>
-#include <thread>
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <thread>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -140,18 +140,20 @@ void Engine::run()
             ImGui::Text("Frametime: %f", stats.frametime);
             ImGui::Text("Mesh Draw Time: %f", stats.mesh_draw_time);
             ImGui::Text("Scene Update Time: %f", stats.scene_update_time);
-            ImGui::Text("Triangles %i", stats.triangle_count);
+            ImGui::Text("Total Triangles %i", stats.total_triangle_count);
+            ImGui::Text("Visible Triangles %i", stats.visible_triangle_count);
             ImGui::Text("Draw calls %i", stats.drawcall_count);
         }
         ImGui::End();
 
         if (ImGui::Begin("Background")) {
-            ComputeEffect &selected = renderer._background_effects[renderer._current_background_effect];
+            ComputeEffect &selected =
+                renderer._background_effects[renderer._current_background_effect];
 
             ImGui::Text("Selected effect: %s", selected.name);
 
-            ImGui::SliderInt(
-                "Effect Index", &renderer._current_background_effect, 0, renderer._background_effects.size() - 1);
+            ImGui::SliderInt("Effect Index", &renderer._current_background_effect, 0,
+                renderer._background_effects.size() - 1);
 
             ImGui::InputFloat4("data1", (float *)&selected.data.data1);
             ImGui::InputFloat4("data2", (float *)&selected.data.data2);
@@ -188,7 +190,8 @@ void Engine::update_scene()
     glm::mat4 view = main_camera.get_view_matrix();
     float fov_deg = std::clamp(static_cast<float>(cvar_main_fov.get()), 10.0f, 170.0f);
     glm::mat4 projection = glm::perspective(glm::radians(fov_deg),
-        (float)renderer._window_extent.width / (float)renderer._window_extent.height, 10000.0f, 0.1f);
+        (float)renderer._window_extent.width / (float)renderer._window_extent.height, 10000.0f,
+        0.1f);
     projection[1][1] *= -1;
 
     renderer.scene_data.view = view;
