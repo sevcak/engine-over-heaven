@@ -14,3 +14,7 @@
 
 - [ ] Refactor CMake shader compilation to automatically detect and compile new shaders without manual globbing/caching issues.
 - [ ] Implement a proper virtual file system or path resolution system to avoid hardcoding relative paths (e.g., `../../shaders/...`) in engine code.
+
+## Rendering
+
+- [ ] Implement GPU-driven occlusion culling.
