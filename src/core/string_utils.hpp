@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -59,6 +61,17 @@ struct StringHash
     StringHash(const StringHash &other) = default;
 
     constexpr operator uint32_t() const noexcept { return computed_hash; }
+
+    constexpr bool operator==(const StringHash &other) const noexcept
+    {
+        return computed_hash == other.computed_hash;
+    }
 };
 
 } // namespace StringUtils
+
+template <>
+struct std::hash<StringUtils::StringHash>
+{
+    size_t operator()(const StringUtils::StringHash &k) const noexcept { return k.computed_hash; }
+};

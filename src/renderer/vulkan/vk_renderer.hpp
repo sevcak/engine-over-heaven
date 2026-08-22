@@ -9,6 +9,7 @@
 #include <span>
 #include <vector>
 #include <vk_descriptors.h>
+#include <vk_material_system.hpp>
 #include <vk_types.h>
 #include <vulkan/vulkan_core.h>
 
@@ -101,41 +102,6 @@ struct GPUSceneData
      */
     glm::vec4 sunlight_direction;
     glm::vec4 sunlight_color;
-};
-
-struct GLTFMetallic_Roughness
-{
-    MaterialPipeline opaque_pipeline;
-    MaterialPipeline transparent_pipeline;
-
-    VkDescriptorSetLayout material_layout;
-
-    struct MaterialConstants
-    {
-        glm::vec4 color_factors;
-        glm::vec4 metal_rough_factors;
-        // Padding
-        glm::vec4 extra[14];
-    };
-
-    struct MaterialResources
-    {
-        AllocatedImage color_image;
-        VkSampler color_sampler;
-        AllocatedImage metal_rough_image;
-        VkSampler metal_rough_smapler;
-        VkBuffer data_buffer;
-        uint32_t data_buffer_offset;
-    };
-
-    DescriptorWriter writer;
-
-    void build_pipelines(VulkanRenderer *renderer);
-
-    void clear_resources(VkDevice device);
-
-    MaterialInstance write_material(VkDevice device, MaterialPass pass,
-        const MaterialResources &resources, DescriptorAllocatorGrowable &descriptor_allocator);
 };
 
 struct RenderObject

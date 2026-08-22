@@ -10,8 +10,10 @@ add_library(vulkan_renderer STATIC
     vk_pipelines.cpp
     vk_pipelines.h
     vk_loader.cpp
-    vk_loader.h
-    vk_types.h
+    vk_loader.hpp
+    vk_material_system.cpp
+    vk_material_system.hpp
+    vk_types.h  
 )
 
 set_property(TARGET vulkan_renderer PROPERTY CXX_STANDARD 20)

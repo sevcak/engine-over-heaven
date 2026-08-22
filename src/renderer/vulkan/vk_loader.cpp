@@ -1,16 +1,16 @@
-#include <vk_loader.h>
-
-#include "fastgltf/types.hpp"
-#include "stb_image.h"
-#include <iostream>
+#include "vk_loader.hpp"
 
 #include "vk_renderer.hpp"
 #include "vk_types.h"
-#include <glm/gtx/quaternion.hpp>
+
+#include <fastgltf/types.hpp>
+#include <iostream>
+#include <stb_image.h>
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/tools.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 std::optional<AllocatedImage> load_image(
     VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image);
@@ -285,7 +285,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
         // Write the material constants to the buffer.
         scene_material_constants[data_index] = constants;
 
-        MaterialPass pass_type = MaterialPass::MainColor;
+        MaterialPass pass_type = MaterialPass::Opaque;
         if (mat.alphaMode == fastgltf::AlphaMode::Blend) {
             pass_type = MaterialPass::Transparent;
         }

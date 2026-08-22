@@ -18,3 +18,7 @@
 ## Rendering
 
 - [ ] Implement GPU-driven occlusion culling.
+
+## Refactor
+
+- [ ] Rename all `.h` files into `.hpp` files and replace all `#include "filename"` with `#include "filename.hpp"` in the appropriate places.

@@ -1,15 +1,11 @@
 #pragma once
 
-#include <vk_types.h>
-#include <unordered_map>
-#include <filesystem>
+#include "vk_descriptors.h"
+#include "vk_material_system.hpp"
+#include "vk_types.h"
 #include <fastgltf/types.hpp>
-#include <vk_descriptors.h>
-
-struct GLTFMaterial
-{
-    MaterialInstance data;
-};
+#include <filesystem>
+#include <unordered_map>
 
 struct GeoSurface
 {
@@ -65,4 +61,5 @@ private:
     void clear_all();
 };
 
-std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(VulkanRenderer *renderer, std::string_view file_path);
+std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
+    VulkanRenderer *renderer, std::string_view file_path);
