@@ -18,7 +18,10 @@
 ## Rendering
 
 - [ ] Implement GPU-driven occlusion culling.
+- [ ] Migrate from monolithic `VkPipeline` to Shader Objects (`VK_EXT_shader_object`).
+- [ ] Migrate from `VkDescriptorSet` management to Descriptor Heaps (`VK_EXT_descriptor_heap`).
 
 ## Refactor
 
 - [ ] Rename all `.h` files into `.hpp` files and replace all `#include "filename"` with `#include "filename.hpp"` in the appropriate places.
+- [ ] Decouple Material System from `VulkanRenderer`. Pass a smaller `RenderContext` or `DeviceContext` into `IMaterialType::build_pipelines` instead of the monolithic `VulkanRenderer*`.
