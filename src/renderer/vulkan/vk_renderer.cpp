@@ -5,11 +5,10 @@
 
 #include <cstdlib>
 #include <vk_gpu_data.hpp>
-#include <vk_images.h>
-#include <vk_initializers.h>
+#include <vk_images.hpp>
+#include <vk_initializers.hpp>
 #include <vk_loader.hpp>
-#include <vk_pipelines.h>
-
+#include <vk_pipelines.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -25,7 +24,7 @@
 #include "imgui_impl_vulkan.h"
 
 #include "VkBootstrap.h"
-#include "vk_types.h"
+#include "vk_types.hpp"
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"

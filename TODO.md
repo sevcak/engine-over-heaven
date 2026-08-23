@@ -23,5 +23,5 @@
 
 ## Refactor
 
-- [ ] Rename all `.h` files into `.hpp` files and replace all `#include "filename"` with `#include "filename.hpp"` in the appropriate places.
+- [x] Rename all `.h` files into `.hpp` files and replace all `#include "filename"` with `#include "filename.hpp"` in the appropriate places.
 - [ ] Decouple Material System from `VulkanRenderer`. Pass a smaller `RenderContext` or `DeviceContext` into `IMaterialType::build_pipelines` instead of the monolithic `VulkanRenderer*`.

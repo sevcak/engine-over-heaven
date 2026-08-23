@@ -1,6 +1,6 @@
 add_library(engine_lib STATIC
     engine.cpp
-    engine.h
+    engine.hpp
 )
 
 set_property(TARGET engine_lib PROPERTY CXX_STANDARD 20)

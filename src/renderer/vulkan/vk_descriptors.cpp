@@ -1,4 +1,4 @@
-﻿#include <vk_descriptors.h>
+#include <vk_descriptors.hpp>
 #include <vulkan/vulkan_core.h>
 
 void DescriptorLayoutBuilder::add_binding(uint32_t binding, VkDescriptorType type)

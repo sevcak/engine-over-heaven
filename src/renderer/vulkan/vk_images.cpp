@@ -1,8 +1,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <vk_images.h>
-#include <vk_initializers.h>
+#include <vk_images.hpp>
+#include <vk_initializers.hpp>
 
 void vkutil::transition_image(
     VkCommandBuffer cmd, VkImage image, VkImageLayout current_layout, VkImageLayout new_layout)

@@ -8,9 +8,9 @@
 #include <functional>
 #include <span>
 #include <vector>
-#include <vk_descriptors.h>
+#include <vk_descriptors.hpp>
 #include <vk_material_system.hpp>
-#include <vk_types.h>
+#include <vk_types.hpp>
 #include <vulkan/vulkan_core.h>
 
 struct SDL_Window;

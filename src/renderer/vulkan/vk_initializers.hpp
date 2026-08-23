@@ -1,9 +1,9 @@
-﻿// vulkan_guide.h : Include file for standard system include files,
+// vulkan_guide.h : Include file for standard system include files,
 // or project specific include files.
 
 #pragma once
 
-#include <vk_types.h>
+#include <vk_types.hpp>
 
 namespace vkinit {
 //> init_cmd

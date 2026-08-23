@@ -3,7 +3,7 @@
 #include "string_utils.hpp"
 #include <string_view>
 #include <unordered_map>
-#include <vk_descriptors.h>
+#include <vk_descriptors.hpp>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>

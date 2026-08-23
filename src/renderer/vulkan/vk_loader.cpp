@@ -1,7 +1,7 @@
 #include "vk_loader.hpp"
 
 #include "vk_renderer.hpp"
-#include "vk_types.h"
+#include "vk_types.hpp"
 
 #include <fastgltf/types.hpp>
 #include <iostream>
