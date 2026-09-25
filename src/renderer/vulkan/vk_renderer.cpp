@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <logger/logger.hpp>
 
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
@@ -134,7 +135,7 @@ void VulkanRenderer::draw(
         resize_requested = true;
         return;
     } else if (e != VK_SUCCESS && e != VK_SUBOPTIMAL_KHR) {
-        fmt::println("Failed to acquire swapchain image: {}", string_VkResult(e));
+        OH_LOG_FATAL("Failed to acquire swapchain image: {}", string_VkResult(e));
         abort();
     }
 
@@ -218,7 +219,7 @@ void VulkanRenderer::draw(
         resize_requested = true;
         return;
     } else if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) {
-        fmt::println("Failed to present swapchain image: {}", string_VkResult(present_result));
+        OH_LOG_FATAL("Failed to present swapchain image: {}", string_VkResult(present_result));
         abort();
     }
 
@@ -496,11 +497,11 @@ void VulkanRenderer::init_background_pipelines()
     VkShaderModule gradient_shader;
     if (!vkutil::load_shader_module(
             "../shaders/gradient_color.comp.spv", _device, &gradient_shader)) {
-        fmt::print("Error building the gradient compute shader.\n");
+        OH_LOG_ERROR("Error building the gradient compute shader.");
     }
     VkShaderModule sky_shader;
     if (!vkutil::load_shader_module("../shaders/sky.comp.spv", _device, &sky_shader)) {
-        fmt::print("Error building the sky compute shader.\n");
+        OH_LOG_ERROR("Error building the sky compute shader.");
     }
 
     VkPipelineShaderStageCreateInfo stage_info = {};
@@ -555,13 +556,13 @@ void VulkanRenderer::init_mesh_pipeline()
     VkShaderModule triangle_frag_shader;
     if (!vkutil::load_shader_module(
             "../shaders/tex_image.frag.spv", _device, &triangle_frag_shader)) {
-        fmt::println("Error building the triangle fragment shader module.");
+        OH_LOG_ERROR("Error building the triangle fragment shader module.");
     }
 
     VkShaderModule triangle_vertex_shader;
     if (!vkutil::load_shader_module(
             "../shaders/colored_triangle_mesh.vert.spv", _device, &triangle_vertex_shader)) {
-        fmt::println("Error building the triangle vertex shader module.");
+        OH_LOG_ERROR("Error building the triangle vertex shader module.");
     }
 
     VkPushConstantRange buffer_range {};
@@ -605,7 +606,7 @@ void VulkanRenderer::init_compute_pipeline()
 {
     VkShaderModule cull_shader;
     if (!vkutil::load_shader_module("../shaders/cull.comp.spv", _device, &cull_shader)) {
-        fmt::println("Error building the cull shader.");
+        OH_LOG_ERROR("Error building the cull shader.");
         abort();
     }
 
@@ -947,7 +948,7 @@ void VulkanRenderer::draw_geometry(
                                      const std::vector<RenderObject> &surfaces) {
         for (auto r_idx : draws) {
             if (current_instance >= MAX_OBJECTS) {
-                fmt::println("Warning: Exceeded MAX_OBJECTS in build_indirect_buffer");
+                OH_LOG_WARN("Exceeded MAX_OBJECTS in build_indirect_buffer");
                 break;
             }
             const RenderObject &r = surfaces[r_idx];

@@ -10,6 +10,7 @@
 #include <vulkan/vulkan.h>
 
 #include <fmt/core.h>
+#include <logger/logger.hpp>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
@@ -18,7 +19,7 @@
     do {                                                                                           \
         VkResult err = x;                                                                          \
         if (err) {                                                                                 \
-            fmt::println("Detected Vulkan error: {}", string_VkResult(err));                       \
+            OH_LOG_FATAL("Detected Vulkan error: {}", string_VkResult(err));                       \
             abort();                                                                               \
         }                                                                                          \
     } while (0)

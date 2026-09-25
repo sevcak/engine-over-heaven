@@ -1,5 +1,6 @@
 #include <vk_descriptors.hpp>
 #include <vulkan/vulkan_core.h>
+#include <logger/logger.hpp>
 
 void DescriptorLayoutBuilder::add_binding(uint32_t binding, VkDescriptorType type)
 {
@@ -201,7 +202,7 @@ VkDescriptorSet DescriptorAllocatorGrowable::allocate(
 {
     VkDescriptorSet ds = try_allocate(device, layout, p_next);
     if (ds == VK_NULL_HANDLE) {
-        fmt::println("FATAL: DescriptorAllocatorGrowable::allocate failed.");
+        OH_LOG_FATAL("DescriptorAllocatorGrowable::allocate failed.");
         abort();
     }
 

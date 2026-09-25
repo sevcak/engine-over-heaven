@@ -13,8 +13,9 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
+#include "logger/logger.hpp"
 
-#include "cvars.hpp"
+#include <cvars.hpp>
 
 Engine *loaded_engine = nullptr;
 
@@ -97,6 +98,13 @@ void Engine::run()
 {
     SDL_Event e;
     bool quit = false;
+
+    OH_LOG_INFO("This is an info log message.");
+    OH_LOG_WARN("This is a warning log message.");
+    OH_LOG_ERROR("This is an error log message.");
+    OH_LOG_FATAL("This is a fatal log message.");
+    OH_LOG_DEBUG("This is a debug log message.");
+    OH_LOG_TRACE("This is a trace log message.");
 
     while (!quit) {
         auto frame_start = std::chrono::system_clock::now();

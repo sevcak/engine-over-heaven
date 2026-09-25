@@ -5,6 +5,7 @@
 #include <memory>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include <logger/logger.hpp>
 
 void MaterialSystem::register_type(std::string_view name, std::unique_ptr<IMaterialType> type)
 {
@@ -27,13 +28,13 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     VkShaderModule mesh_frag_shader;
     if (!vkutil::load_shader_module(
             "../shaders/mesh.frag.spv", renderer->_device, &mesh_frag_shader)) {
-        fmt::println("Error building the triangle fragment shader module.");
+        OH_LOG_ERROR("Error building the triangle fragment shader module.");
     }
 
     VkShaderModule mesh_vertex_shader;
     if (!vkutil::load_shader_module(
             "../shaders/mesh.vert.spv", renderer->_device, &mesh_vertex_shader)) {
-        fmt::println("Error building the traingle vertex shader module.");
+        OH_LOG_ERROR("Error building the triangle vertex shader module.");
     }
 
     VkPushConstantRange matrix_range {};

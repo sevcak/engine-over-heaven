@@ -1,6 +1,7 @@
 #include <vk_pipelines.hpp>
 #include <fstream>
 #include <vk_initializers.hpp>
+#include <logger/logger.hpp>
 
 bool vkutil::load_shader_module(const char *file_path, VkDevice device, VkShaderModule *out_shader_module)
 {
@@ -100,7 +101,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
     VkPipeline new_pipeline;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &new_pipeline)
             != VK_SUCCESS) {
-        fmt::println("Failed to create the graphics pipeline.");
+        OH_LOG_ERROR("Failed to create the graphics pipeline.");
 
         return VK_NULL_HANDLE;
     }

@@ -11,6 +11,7 @@
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/tools.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <logger/logger.hpp>
 
 std::optional<AllocatedImage> load_image(
     VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image);
@@ -48,11 +49,11 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter)
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
     VulkanRenderer *engine, std::filesystem::path file_path)
 {
-    std::cout << "Loading GLTF: " << file_path << std::endl;
+    OH_LOG_INFO("Loading GLTF: {}", file_path.string());
 
     auto data = fastgltf::GltfDataBuffer::FromPath(file_path);
     if (!data) {
-        fmt::print("Failed to load glTF: {}\n", fastgltf::to_underlying(data.error()));
+        OH_LOG_ERROR("Failed to load glTF: {}", fastgltf::to_underlying(data.error()));
         return {};
     }
 
@@ -63,7 +64,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
 
     auto load = parser.loadGltfBinary(data.get(), file_path.parent_path(), gltf_options);
     if (!load) {
-        fmt::print("Failed to load glTF: {} \n", fastgltf::to_underlying(load.error()));
+        OH_LOG_ERROR("Failed to load glTF: {}", fastgltf::to_underlying(load.error()));
         return {};
     }
 
@@ -99,7 +100,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
             {
                 auto position_it = p.findAttribute("POSITION");
                 if (position_it == p.attributes.end()) {
-                    fmt::println("Didn't find position attribute.");
+                    OH_LOG_ERROR("Didn't find position attribute.");
                     return {};
                 }
                 fastgltf::Accessor &pos_accessor = gltf.accessors[position_it->accessorIndex];
@@ -167,7 +168,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
 std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
     VulkanRenderer *engine, std::string_view file_path)
 {
-    fmt::print("Loading GLTF: {}\n", file_path);
+    OH_LOG_INFO("Loading GLTF: {}", file_path);
 
     std::shared_ptr<LoadedGLTF> scene = std::make_shared<LoadedGLTF>();
     scene->creator = engine;
@@ -254,7 +255,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
             images.push_back(*img);
             file.images[image.name.c_str()] = *img;
         } else {
-            std::cout << "Failed to load texture " << image.name << std::endl;
+            OH_LOG_ERROR("Failed to load texture {}", image.name);
             images.push_back(engine->_error_checkerboard_image);
         }
     }
@@ -347,7 +348,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
             {
                 auto position_it = p.findAttribute("POSITION");
                 if (position_it == p.attributes.end()) {
-                    fmt::println("Didn't find position attribute.");
+                    OH_LOG_ERROR("Didn't find position attribute.");
                     return {};
                 }
                 const auto &pos_accessor = gltf.accessors[position_it->accessorIndex];
