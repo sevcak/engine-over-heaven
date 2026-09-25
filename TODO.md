@@ -7,8 +7,10 @@
 
 ## Logging System
 
-- [ ] Add a logging system.
-    - [ ] Plan out the subtasks for this.
+- [ ] Decouple formatting from I/O by implementing an `ILogSink` interface (e.g., ConsoleSink, FileSink).
+- [ ] Route Error and Fatal logs to `stderr` instead of `stdout`.
+- [ ] Implement Asynchronous Logging (background thread + lock-free queue) to prevent synchronous I/O blocking.
+- [ ] Add Log Categories (Subsystems) to filter logs (e.g., `[Render]`, `[Physics]`).
 
 ## Build System & Architecture
 
