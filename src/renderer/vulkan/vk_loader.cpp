@@ -311,7 +311,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
             material_resources.color_sampler = file.samplers[sampler];
         }
         // Build the material.
-        new_mat->data = engine->_metal_rough_material.write_material(
+        new_mat->data = engine->_material_system.get_type<GLTFMetallic_Roughness>().write_material(
             engine->_device, pass_type, material_resources, file.descriptor_pool);
 
         data_index++;

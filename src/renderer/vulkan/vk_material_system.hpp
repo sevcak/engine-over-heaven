@@ -1,12 +1,14 @@
 #pragma once
 
-#include "string_utils.hpp"
-#include <string_view>
 #include <unordered_map>
 #include <vk_descriptors.hpp>
+#include <typeindex>
+#include <memory>
+#include <concepts>
+#include <cstdlib>
+#include <logger/logger.hpp>
 
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
 
 class VulkanRenderer;
 
@@ -44,24 +46,57 @@ public:
 class MaterialSystem
 {
 private:
-    std::unordered_map<StringUtils::StringHash, std::unique_ptr<IMaterialType>> registered_types;
+    std::unordered_map<std::type_index, std::unique_ptr<IMaterialType>> registered_types;
 
 public:
     /**
      * Register a material type within the system.
      *
-     * @param name The name of the material type.
-     * @param type The material type to register.
+     * @tparam T The type of the material to register. Must be derived from \c IMaterialType.
      */
-    void register_type(std::string_view name, std::unique_ptr<IMaterialType> type);
+    template <std::derived_from<IMaterialType> T>
+    void register_type()
+    {
+        std::type_index type_id = typeid(T);
+        auto [_, inserted] = registered_types.try_emplace(type_id, std::make_unique<T>());
+        if (!inserted) {
+            OH_LOG_FATAL("Material type already registered: {}.", type_id.name());
+            abort();
+        }
+    }
 
     /**
-     * Get a material type by name.
+     * Get a material type.
      *
-     * @param name The name of the material type.
-     * @returns    A reference to the material type.
+     * @tparam T The type of the material to retrieve. Must be derived from \c IMaterialType.
      */
-    IMaterialType &get_type(std::string_view name);
+    template <std::derived_from<IMaterialType> T>
+    T &get_type() 
+    {
+        std::type_index type_id = typeid(T);
+        auto it = registered_types.find(type_id);
+        if (it == registered_types.end()) {
+            OH_LOG_FATAL("Material type not registered: {}.", type_id.name());
+            abort();
+        }
+
+        return *static_cast<T *>(it->second.get());
+    }
+
+
+    /**
+     * Clear all resources associated with the material system.
+     *
+     * @param device The Vulkan device.
+     */
+    void clear_resources(VkDevice device);
+
+    /**
+     * Build all necessary Vulkan pipelines for the registered material types.
+     *
+     * @param renderer The Vulkan renderer instance used to create the pipelines.
+     */
+    void build_pipelines(VulkanRenderer *renderer);
 };
 
 class GLTFMetallic_Roughness : public IMaterialType
@@ -69,7 +104,7 @@ class GLTFMetallic_Roughness : public IMaterialType
 public:
     std::array<MaterialPipeline, static_cast<std::size_t>(MaterialPass::MaxPasses)> pipelines;
 
-    VkDescriptorSetLayout material_layout;
+    VkDescriptorSetLayout material_layout { VK_NULL_HANDLE };
 
     struct MaterialConstants
     {

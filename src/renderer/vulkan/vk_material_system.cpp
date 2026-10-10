@@ -2,25 +2,22 @@
 #include "vk_initializers.hpp"
 #include "vk_pipelines.hpp"
 #include "vk_renderer.hpp"
-#include <memory>
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
-#include <logger/logger.hpp>
+#include <ranges>
 
-void MaterialSystem::register_type(std::string_view name, std::unique_ptr<IMaterialType> type)
+void MaterialSystem::clear_resources(VkDevice device)
 {
-    // TODO: Add a fatal log message.
-    assert(!registered_types.contains(name));
-
-    registered_types[std::move(name)] = std::move(type);
+    for (auto &material_type : registered_types | std::views::values) {
+        material_type->clear_resources(device);
+    }
+    registered_types.clear();
 }
 
-IMaterialType &MaterialSystem::get_type(std::string_view name)
+void MaterialSystem::build_pipelines(VulkanRenderer *renderer)
 {
-    auto it = registered_types.find(name);
-    // TODO: Add a fatal log message.
-    assert(it != registered_types.end());
-    return *it->second;
+    for (auto &material_type : registered_types | std::views::values) {
+        material_type->build_pipelines(renderer);
+    }
 }
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
@@ -88,14 +85,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     transparent_pipeline.pipeline = pipeline_builder.build_pipeline(renderer->_device);
 
     vkDestroyShaderModule(renderer->_device, mesh_frag_shader, nullptr);
-    vkDestroyShaderModule(renderer->_device, mesh_vertex_shader, nullptr);
-
-    renderer->_main_deletion_queue.push_function([=, this, device = renderer->_device]() {
-        vkDestroyDescriptorSetLayout(device, material_layout, nullptr);
-        vkDestroyPipelineLayout(device, opaque_pipeline.layout, nullptr);
-        vkDestroyPipeline(device, opaque_pipeline.pipeline, nullptr);
-        vkDestroyPipeline(device, transparent_pipeline.pipeline, nullptr);
-    });
+    vkDestroyShaderModule(renderer->_device, mesh_vertex_shader, nullptr); 
 }
 
 MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass,

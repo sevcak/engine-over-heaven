@@ -219,7 +219,7 @@ public:
     VkSampler _default_sampler_nearest;
 
     MaterialInstance _default_data;
-    GLTFMetallic_Roughness _metal_rough_material;
+    MaterialSystem _material_system;
 
     void init(SDL_Window *window, uint32_t width, uint32_t height);
     void cleanup();

@@ -473,7 +473,12 @@ void VulkanRenderer::init_pipelines()
     init_background_pipelines();
     init_mesh_pipeline();
     init_compute_pipeline();
-    _metal_rough_material.build_pipelines(this);
+
+    _material_system.register_type<GLTFMetallic_Roughness>();
+    _material_system.build_pipelines(this);
+    _main_deletion_queue.push_function([this]() {
+        _material_system.clear_resources(_device);
+    });
 }
 
 void VulkanRenderer::init_background_pipelines()
@@ -754,7 +759,7 @@ void VulkanRenderer::init_default_data()
     material_resources.data_buffer = material_constants.buffer;
     material_resources.data_buffer_offset = 0;
 
-    _default_data = _metal_rough_material.write_material(
+    _default_data = _material_system.get_type<GLTFMetallic_Roughness>().write_material(
         _device, MaterialPass::Opaque, material_resources, _global_descriptor_allocator);
 }
 
