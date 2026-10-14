@@ -102,6 +102,7 @@ struct GPUSceneData
      */
     glm::vec4 sunlight_direction;
     glm::vec4 sunlight_color;
+    glm::vec4 camera_position;
 };
 
 struct RenderObject

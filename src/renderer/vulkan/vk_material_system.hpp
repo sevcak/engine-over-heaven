@@ -119,7 +119,7 @@ public:
         AllocatedImage color_image;
         VkSampler color_sampler;
         AllocatedImage metal_rough_image;
-        VkSampler metal_rough_smapler;
+        VkSampler metal_rough_sampler;
         VkBuffer data_buffer;
         uint32_t data_buffer_offset;
     };

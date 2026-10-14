@@ -296,19 +296,33 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
         material_resources.color_image = engine->_white_image;
         material_resources.color_sampler = engine->_default_sampler_linear;
         material_resources.metal_rough_image = engine->_white_image;
-        material_resources.metal_rough_smapler = engine->_default_sampler_linear;
+        material_resources.metal_rough_sampler = engine->_default_sampler_linear;
 
         material_resources.data_buffer = file.material_data_buffer.buffer;
         material_resources.data_buffer_offset =
             data_index * sizeof(GLTFMetallic_Roughness::MaterialConstants);
         if (mat.pbrData.baseColorTexture.has_value()) {
-            size_t img =
-                gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex]
-                                 .samplerIndex.value();
+            auto &tex = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex];
 
-            material_resources.color_image = images[img];
-            material_resources.color_sampler = file.samplers[sampler];
+            if (tex.imageIndex.has_value() && *tex.imageIndex < images.size()) {
+                size_t img = *tex.imageIndex;
+                material_resources.color_image = images[img];
+            }
+            if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
+                size_t sampler = *tex.samplerIndex;
+                material_resources.color_sampler = file.samplers[sampler];
+            }
+        }
+        if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+            auto &tex = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
+
+            if (tex.imageIndex.has_value() && *tex.imageIndex < images.size()) {
+                material_resources.metal_rough_image = images[*tex.imageIndex];
+            }
+            if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
+                size_t sampler = *tex.samplerIndex;
+                material_resources.metal_rough_sampler = file.samplers[sampler];
+            }
         }
         // Build the material.
         new_mat->data = engine->_material_system.get_type<GLTFMetallic_Roughness>().write_material(

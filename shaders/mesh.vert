@@ -8,6 +8,7 @@
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) out vec3 out_color;
 layout(location = 2) out vec2 out_uv;
+layout(location = 3) out vec3 out_world_pos;
 
 layout(std430, set = 0, binding = 1) readonly buffer ObjectBuffer
 {
@@ -24,7 +25,8 @@ void main()
 
     gl_Position = scene_data.viewproj * obj_data.world_matrix * position;
 
-    out_normal = (obj_data.world_matrix * vec4(v.normal, 1.0)).xyz;
+    out_world_pos = (obj_data.world_matrix * position).xyz;
+    out_normal = (obj_data.world_matrix * vec4(v.normal, 0.0)).xyz;
     out_color = v.color.xyz * material_data.color_factors.xyz;
     out_uv.x = v.uv_x;
     out_uv.y = v.uv_y;

@@ -743,7 +743,7 @@ void VulkanRenderer::init_default_data()
     material_resources.color_image = _white_image;
     material_resources.color_sampler = _default_sampler_linear;
     material_resources.metal_rough_image = _white_image;
-    material_resources.metal_rough_smapler = _default_sampler_linear;
+    material_resources.metal_rough_sampler = _default_sampler_linear;
 
     AllocatedBuffer material_constants =
         create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants),
@@ -752,7 +752,7 @@ void VulkanRenderer::init_default_data()
     GLTFMetallic_Roughness::MaterialConstants *scene_uniform_data =
         (GLTFMetallic_Roughness::MaterialConstants *)material_constants.info.pMappedData;
     scene_uniform_data->color_factors = glm::vec4 { 1.0f, 1.0f, 1.0f, 1.0f };
-    scene_uniform_data->metal_rough_factors = glm::vec4 { 1.0f, 0.5f, 0.0f, 0.0f };
+    scene_uniform_data->metal_rough_factors = glm::vec4 { 0.0f, 0.5f, 0.0f, 0.0f };
 
     _main_deletion_queue.push_function([=, this]() { destroy_buffer(material_constants); });
 

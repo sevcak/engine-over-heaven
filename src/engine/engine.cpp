@@ -202,6 +202,8 @@ void Engine::update_scene()
         0.1f);
     projection[1][1] *= -1;
 
+    renderer.scene_data.camera_position = glm::vec4(main_camera.position, 1.0f);
+
     renderer.scene_data.view = view;
     renderer.scene_data.proj = projection;
     renderer.scene_data.viewproj = projection * view;

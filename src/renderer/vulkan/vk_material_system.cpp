@@ -107,7 +107,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
         resources.data_buffer_offset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_image(1, resources.color_image.image_view, resources.color_sampler,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(2, resources.metal_rough_image.image_view, resources.metal_rough_smapler,
+    writer.write_image(2, resources.metal_rough_image.image_view, resources.metal_rough_sampler,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(device, mat_data.material_set);
 
@@ -119,7 +119,9 @@ void GLTFMetallic_Roughness::clear_resources(VkDevice device)
     vkDestroyDescriptorSetLayout(device, material_layout, nullptr);
 
     vkDestroyPipelineLayout(device, pipelines[MaterialPass::Opaque].layout, nullptr);
+    pipelines[MaterialPass::Opaque].layout = VK_NULL_HANDLE;
 
     vkDestroyPipeline(device, pipelines[MaterialPass::Opaque].pipeline, nullptr);
     vkDestroyPipeline(device, pipelines[MaterialPass::Transparent].pipeline, nullptr);
+    pipelines[MaterialPass::Transparent].layout = VK_NULL_HANDLE;
 }
