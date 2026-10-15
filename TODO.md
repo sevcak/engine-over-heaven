@@ -27,3 +27,7 @@
 
 - [x] Rename all `.h` files into `.hpp` files and replace all `#include "filename"` with `#include "filename.hpp"` in the appropriate places.
 - [ ] Decouple Material System from `VulkanRenderer`. Pass a smaller `RenderContext` or `DeviceContext` into `IMaterialType::build_pipelines` instead of the monolithic `VulkanRenderer*`.
+
+## Profiling
+
+- [ ] Set up Tracy and profiling for the project.
