@@ -1,4 +1,5 @@
 /build
 /bin
 /assets/brickadia
+/custom_assets
 /shaders/*.spv

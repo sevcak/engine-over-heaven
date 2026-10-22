@@ -35,9 +35,9 @@ struct AllocatedImage
 
 struct AllocatedBuffer
 {
-    VkBuffer buffer;
-    VmaAllocation allocation;
-    VmaAllocationInfo info;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = nullptr;
+    VmaAllocationInfo info {};
 };
 
 struct Bounds
@@ -56,7 +56,7 @@ struct Vertex
     glm::vec4 color;
 };
 
-/*
+/**
  * Structure holding the resources needed for a mesh.
  */
 struct GPUMeshBuffers
@@ -66,7 +66,7 @@ struct GPUMeshBuffers
     VkDeviceAddress vertex_buffer_address;
 };
 
-/*
+/**
  * Structure holding the push constants for mesh object drawing.
  */
 struct GPUDrawPushConstants

@@ -42,33 +42,24 @@ void Engine::init()
     renderer.init(_window, _window_extent.width, _window_extent.height);
 
     main_camera.velocity = glm::vec3(0.0f);
-    main_camera.position = glm::vec3(30.f, -00.f, -085.f);
+    main_camera.position = glm::vec3(0.0f, 3.0f, 0.0f);
     main_camera.pitch = 0.0f;
     main_camera.yaw = 0.0f;
     camera_controller = FlyCameraController(&main_camera);
 
-    _test_meshes = load_gltf_meshes(&renderer, "../assets/basicmesh.glb").value();
+    scene_definitions.push_back({
+        .name = "Structure",
+        .gltf_paths = { "./../assets/structure.glb" },
+    });
+    scene_definitions.push_back({
+        .name = "Sponza",
+        .gltf_paths = {
+            "./../custom_assets/sponza/main_sponza/NewSponza_Main_glTF_003.gltf",
+            "./../custom_assets/sponza/pkg_a_curtains/NewSponza_Curtains_glTF.gltf",
+        },
+    });
 
-    for (auto &m : _test_meshes) {
-        std::shared_ptr<MeshNode> new_node = std::make_shared<MeshNode>();
-        new_node->mesh = m;
-
-        new_node->local_transform = glm::mat4 { 1.0f };
-        new_node->world_transform = glm::mat4 { 1.0f };
-
-        for (auto &s : new_node->mesh->surfaces) {
-            s.material = std::make_shared<GLTFMaterial>(renderer._default_data);
-        }
-
-        loaded_nodes[m->name] = std::move(new_node);
-    }
-
-    std::string structure_path = { "./../assets/structure.glb" };
-    auto structure_file = load_gltf(&renderer, structure_path);
-
-    assert(structure_file.has_value());
-
-    loaded_scenes["structure"] = *structure_file;
+    load_scene(0);
 
     _is_initialized = true;
 }
@@ -78,13 +69,10 @@ void Engine::cleanup()
     if (_is_initialized) {
         vkDeviceWaitIdle(renderer._device);
 
-        loaded_scenes.clear();
-        loaded_nodes.clear();
-
-        for (auto &mesh : _test_meshes) {
-            renderer.destroy_buffer(mesh->mesh_buffers.index_buffer);
-            renderer.destroy_buffer(mesh->mesh_buffers.vertex_buffer);
-        }
+        // The scene's buffers and the glTFs free their GPU resources, so they must go before the
+        // renderer.
+        renderer.destroy_render_scene(render_scene);
+        current_scene.gltfs.clear();
 
         renderer.cleanup();
 
@@ -98,13 +86,6 @@ void Engine::run()
 {
     SDL_Event e;
     bool quit = false;
-
-    OH_LOG_INFO("This is an info log message.");
-    OH_LOG_WARN("This is a warning log message.");
-    OH_LOG_ERROR("This is an error log message.");
-    OH_LOG_FATAL("This is a fatal log message.");
-    OH_LOG_DEBUG("This is a debug log message.");
-    OH_LOG_TRACE("This is a trace log message.");
 
     while (!quit) {
         auto frame_start = std::chrono::system_clock::now();
@@ -170,13 +151,37 @@ void Engine::run()
         }
         ImGui::End();
 
+        if (ImGui::Begin("Scene")) {
+            const char *preview = current_scene_index >= 0
+                ? scene_definitions[current_scene_index].name.c_str()
+                : "";
+            if (ImGui::BeginCombo("Scene", preview)) {
+                for (int i = 0; i < static_cast<int>(scene_definitions.size()); i++) {
+                    const bool is_selected = (i == current_scene_index);
+                    if (ImGui::Selectable(scene_definitions[i].name.c_str(), is_selected)) {
+                        requested_scene_index = i;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::End();
+
         CVarSystem::get()->draw_imgui_editor();
 
         ImGui::Render();
 
+        if (requested_scene_index != -1 && requested_scene_index != current_scene_index) {
+            load_scene(requested_scene_index);
+        }
+        requested_scene_index = -1;
+
         update_scene();
 
-        renderer.draw(main_draw_context, main_camera, stats, _resize_requested);
+        renderer.draw(render_scene, main_camera, stats, _resize_requested);
 
         auto frame_end = std::chrono::system_clock::now();
         auto frame_elapsed =
@@ -212,28 +217,22 @@ void Engine::update_scene()
     renderer.scene_data.sunlight_color = glm::vec4(1.0f);
     renderer.scene_data.sunlight_direction = glm::vec4(0.0f, 1.0f, 0.5f, 1.0f);
 
-    main_draw_context.opaque_surfaces.clear();
-
-    if (loaded_nodes.contains("Suzanne")) {
-        loaded_nodes["Suzanne"]->draw(glm::mat4 { 1.0f }, main_draw_context);
-    }
-
-    for (int i = -3; i < 3; i++) {
-        if (loaded_nodes.contains("Cube")) {
-            glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3 { 0.2f });
-            glm::mat4 translation = glm::translate(glm::mat4(1.0f), glm::vec3 { i, 1.0f, 0.0f });
-
-            loaded_nodes["Cube"]->draw(translation * scale, main_draw_context);
-        }
-    }
-
-    if (loaded_scenes.contains("structure")) {
-        loaded_scenes["structure"]->draw(glm::mat4 { 1.0f }, main_draw_context);
-    }
-
     auto end_time = std::chrono::system_clock::now();
     auto time_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
 
     stats.scene_update_time = time_elapsed.count() / 1000.0f;
+}
+
+void Engine::load_scene(int index)
+{
+    // The GPU may still be using the old scene's buffers and textures.
+    vkDeviceWaitIdle(renderer._device);
+
+    renderer.destroy_render_scene(render_scene);
+    current_scene.gltfs.clear();
+
+    current_scene.load_data(&renderer, scene_definitions[index]);
+    render_scene = renderer.init_render_scene(current_scene);
+    current_scene_index = index;
 }

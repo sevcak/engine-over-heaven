@@ -14,7 +14,7 @@
 #include <logger/logger.hpp>
 
 std::optional<AllocatedImage> load_image(
-    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image);
+    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image, std::filesystem::path gltf_path);
 
 VkFilter extract_filter(fastgltf::Filter filter)
 {
@@ -165,12 +165,12 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
     return meshes;
 }
 
-std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
-    VulkanRenderer *engine, std::string_view file_path)
+std::unique_ptr<LoadedGLTF> load_gltf(
+    VulkanRenderer *engine, std::filesystem::path path)
 {
-    OH_LOG_INFO("Loading GLTF: {}", file_path);
+    OH_LOG_INFO("Loading GLTF: {}", path.c_str());
 
-    std::shared_ptr<LoadedGLTF> scene = std::make_shared<LoadedGLTF>();
+    std::unique_ptr<LoadedGLTF> scene = std::make_unique<LoadedGLTF>();
     scene->creator = engine;
     LoadedGLTF &file = *scene.get();
 
@@ -181,7 +181,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
                               fastgltf::Options::LoadExternalBuffers;
     // | fastgltf::Options::LoadExternalImages;
 
-    auto data = fastgltf::GltfDataBuffer::FromPath(file_path);
+    auto data = fastgltf::GltfDataBuffer::FromPath(path);
     if (!data) {
         std::cerr << "Failed to load glTF data: " << fastgltf::to_underlying(data.error())
                   << std::endl;
@@ -189,8 +189,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
     }
 
     fastgltf::Asset gltf;
-
-    std::filesystem::path path = file_path;
 
     auto type = fastgltf::determineGltfFileType(data.get());
     if (type == fastgltf::GltfType::glTF) {
@@ -249,13 +247,13 @@ std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
 
     // Load all textures.
     for (fastgltf::Image &image : gltf.images) {
-        std::optional<AllocatedImage> img = load_image(engine, gltf, image);
+        std::optional<AllocatedImage> img = load_image(engine, gltf, image, path);
 
         if (img.has_value()) {
             images.push_back(*img);
             file.images[image.name.c_str()] = *img;
         } else {
-            OH_LOG_ERROR("Failed to load texture {}", image.name);
+            OH_LOG_ERROR("Failed to load texture {}.", image.name);
             images.push_back(engine->_error_checkerboard_image);
         }
     }
@@ -521,7 +519,7 @@ void LoadedGLTF::clear_all()
 }
 
 std::optional<AllocatedImage> load_image(
-    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image)
+    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image, std::filesystem::path gltf_path)
 {
     AllocatedImage new_image {};
 
@@ -533,7 +531,7 @@ std::optional<AllocatedImage> load_image(
                 assert(filepath.fileByteOffset == 0);
                 assert(filepath.uri.isLocalPath());
 
-                const std::string path { filepath.uri.path().begin(), filepath.uri.path().end() };
+                const std::string path = gltf_path.parent_path() / filepath.uri.fspath();
                 unsigned char *data = stbi_load(path.c_str(), &width, &height, &n_channels, 4);
                 if (data) {
                     VkExtent3D image_size;

@@ -28,10 +28,14 @@ public:
 
     VulkanRenderer renderer;
 
-    DrawContext main_draw_context;
-    std::unordered_map<std::string, std::shared_ptr<Node>> loaded_nodes;
-    std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loaded_scenes;
-    std::vector<std::shared_ptr<MeshAsset>> _test_meshes;
+    std::vector<SceneDefinition> scene_definitions;
+    int current_scene_index { -1 };
+    /** Set by the UI. Acted on once per frame, outside of the UI code. */
+    int requested_scene_index { -1 };
+
+    Scene current_scene;
+
+    RenderScene render_scene;
 
     Camera main_camera;
     FlyCameraController camera_controller;
@@ -42,4 +46,6 @@ public:
     void cleanup();
     void run();
     void update_scene();
+    /** Unloads the current scene, if any, and loads `scene_definitions[index]`. */
+    void load_scene(int index);
 };

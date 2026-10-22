@@ -51,7 +51,12 @@ struct LoadedGLTF : public IRenderable
 
     AllocatedBuffer material_data_buffer;
 
+    // TODO: This should be replaced with a proper resource management system.
     VulkanRenderer *creator;
+
+    LoadedGLTF() = default;
+    LoadedGLTF(const LoadedGLTF &) = delete;
+    LoadedGLTF &operator=(const LoadedGLTF &) = delete;
 
     ~LoadedGLTF() { clear_all(); }
 
@@ -61,5 +66,5 @@ private:
     void clear_all();
 };
 
-std::optional<std::shared_ptr<LoadedGLTF>> load_gltf(
-    VulkanRenderer *renderer, std::string_view file_path);
+std::unique_ptr<LoadedGLTF> load_gltf(
+    VulkanRenderer *renderer, std::filesystem::path file_path);

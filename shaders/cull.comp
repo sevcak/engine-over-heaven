@@ -10,15 +10,21 @@ layout (std430, set = 0, binding = 0) readonly buffer ObjectBuffer
 {
     GPUObjectData objects[];
 };
-
-layout (std430, set = 0, binding = 1) buffer IndirectCommands
+layout (std430, set = 0, binding = 1) writeonly buffer OutputCommands
 {
-    VkDrawIndexedIndirectCommand commands[];
+    VkDrawIndexedIndirectCommand out_commands[];
 };
-
 layout (std430, set = 0, binding = 2) buffer RenderStatsBuffer
 {
     uint visible_triangles;
+};
+layout (std430, set = 0, binding = 3) readonly buffer InputCommands
+{
+    VkDrawIndexedIndirectCommand in_commands[];
+};
+layout (std430, set = 0, binding = 4) readonly buffer TransparentOrderBuffer
+{
+    uint transparent_order[];
 };
 
 layout (push_constant) uniform constants
@@ -26,6 +32,7 @@ layout (push_constant) uniform constants
     vec4 frustum_planes[6];
     uint object_count;
     uint cull_enabled;
+    uint first_transparent_index;
 } push_constants;
 
 bool is_visible(vec4 bounds, mat4 world_matrix)
@@ -58,20 +65,28 @@ bool is_visible(vec4 bounds, mat4 world_matrix)
  
 void main()
 {
-    uint object_index = gl_GlobalInvocationID.x;
-    if (object_index >= push_constants.object_count) {
+    uint draw_index = gl_GlobalInvocationID.x;
+    if (draw_index >= push_constants.object_count) {
         return;
     }
 
+    uint slot = draw_index < push_constants.first_transparent_index
+        ? draw_index
+        : transparent_order[draw_index - push_constants.first_transparent_index];
+
+    VkDrawIndexedIndirectCommand command = in_commands[slot];
+
     bool visible = true;
     if (push_constants.cull_enabled != 0) {
-        visible = is_visible(objects[object_index].sphere_bounds, objects[object_index].world_matrix);
+        visible = is_visible(objects[slot].sphere_bounds, objects[slot].world_matrix);
     }
 
     if (visible) {
-        commands[object_index].instance_count = 1;
-        atomicAdd(visible_triangles, commands[object_index].index_count / 3);
+        command.instance_count = 1;
+        atomicAdd(visible_triangles, command.index_count / 3);
     } else {
-        commands[object_index].instance_count = 0;
+        command.instance_count = 0;
     }
+
+    out_commands[draw_index] = command;
 }
