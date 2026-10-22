@@ -2,6 +2,7 @@ add_library(core STATIC
     cvars.cpp
     cvars.hpp
     string_utils.hpp
+    types.hpp
 )
 
 set_property(TARGET core PROPERTY CXX_STANDARD 20)

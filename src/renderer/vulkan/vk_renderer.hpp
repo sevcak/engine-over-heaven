@@ -2,8 +2,7 @@
 
 #include <SDL_events.h>
 #include <camera/camera.hpp>
-#include <cstddef>
-#include <cstdint>
+#include <core/types.hpp>
 #include <deque>
 #include <functional>
 #include <span>
@@ -62,9 +61,9 @@ struct FrameData
 struct CullPushConstants
 {
     glm::vec4 frustum_planes[6];
-    uint32_t object_count;
-    uint32_t cull_enabled;
-    uint32_t first_transparent_index;
+    u32 object_count;
+    u32 cull_enabled;
+    u32 first_transparent_index;
 
     /**
      * Extract frustum planes from the view-projection matrix and store them into
@@ -116,8 +115,8 @@ struct GPUSceneData
 
 struct RenderObject
 {
-    uint32_t index_count;
-    uint32_t first_index;
+    u32 index_count;
+    u32 first_index;
     VkBuffer index_buffer;
 
     MaterialInstance *material;
@@ -155,7 +154,7 @@ struct RenderScene
     /** Material of the draw at each slot. Read by draw recording to decide when to rebind. */
     std::vector<MaterialInstance *> materials;
     /** First transparent slot. Equals the opaque draw count. */
-    uint32_t first_transparent_index = 0;
+    u32 first_transparent_index = 0;
 
     /**
      * World-space center of each transparent object (indexed by `slot - first_transparent_index`).
@@ -167,7 +166,7 @@ struct RenderScene
      * Triangles in the whole scene, every draw counted once whether visible or not. Computed once
      * at load, since it never changes. Reported as the "total triangles" stat.
      */
-    uint32_t total_triangle_count = 0;
+    u32 total_triangle_count = 0;
 
     /**
      * Device-local `VkDrawIndexedIndirectCommand` per slot, uploaded once. Read-only input 
@@ -184,12 +183,12 @@ struct DrawContext
 
 struct EngineStats
 {
-    float frametime;
+    f32 frametime;
     int visible_triangle_count;
     int total_triangle_count;
     int drawcall_count;
-    float scene_update_time;
-    float mesh_draw_time;
+    f32 scene_update_time;
+    f32 mesh_draw_time;
 
     void reset_counters();
 };
@@ -255,7 +254,7 @@ public:
     FrameData &get_current_frame() { return _frames[_frame_number % FRAME_OVERLAP]; }
 
     VkQueue _graphics_queue;
-    uint32_t _graphics_queue_family;
+    u32 _graphics_queue_family;
 
     DeletionQueue _main_deletion_queue;
 
@@ -301,10 +300,10 @@ public:
     MaterialSystem _material_system;
 
     /* Static render scene data. */
-    std::vector<uint32_t> transparent_render_order;
-    std::vector<float> center_distances_sq;
+    std::vector<u32> transparent_render_order;
+    std::vector<f32> center_distances_sq;
 
-    void init(SDL_Window *window, uint32_t width, uint32_t height);
+    void init(SDL_Window *window, u32 width, u32 height);
 
     RenderScene init_render_scene(Scene &scene);
 
@@ -318,10 +317,10 @@ public:
 
     void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
 
-    GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+    GPUMeshBuffers upload_mesh(std::span<u32> indices, std::span<Vertex> vertices);
 
     AllocatedBuffer create_buffer(
-        size_t alloc_size, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
+        usize alloc_size, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
 
     AllocatedImage create_image(
         VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
@@ -331,14 +330,14 @@ public:
     void destroy_buffer(const AllocatedBuffer &buffer);
     void destroy_image(const AllocatedImage &img);
 
-    void resize_swapchain(uint32_t width, uint32_t height);
+    void resize_swapchain(u32 width, u32 height);
 
 private:
-    constexpr static std::size_t MAX_OBJECTS = 100000;
+    constexpr static usize MAX_OBJECTS = 100000;
 
     void init_vulkan();
 
-    void init_swapchain(uint32_t width, uint32_t height);
+    void init_swapchain(u32 width, u32 height);
 
     void init_commands();
 
@@ -358,12 +357,12 @@ private:
 
     void init_object_buffers();
 
-    void create_swapchain(uint32_t width, uint32_t height);
+    void create_swapchain(u32 width, u32 height);
 
     void destroy_swapchain();
 
     AllocatedBuffer upload_to_device_local(
-        const void *data, std::size_t size, VkBufferUsageFlags usage);
+        const void *data, usize size, VkBufferUsageFlags usage);
 
     void draw_background(VkCommandBuffer cmd);
 

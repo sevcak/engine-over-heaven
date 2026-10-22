@@ -7,6 +7,8 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan.h>
 
+#include <core/types.hpp>
+
 #include <fmt/core.h>
 #include <logger/logger.hpp>
 
@@ -41,16 +43,16 @@ struct AllocatedBuffer
 struct Bounds
 {
     glm::vec3 origin;
-    float sphere_radius;
+    f32 sphere_radius;
     glm::vec3 extents;
 };
 
 struct Vertex
 {
     glm::vec3 position;
-    float uv_x;
+    f32 uv_x;
     glm::vec3 normal;
-    float uv_y;
+    f32 uv_y;
     glm::vec4 color;
 };
 

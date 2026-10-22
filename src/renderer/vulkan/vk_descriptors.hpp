@@ -8,7 +8,7 @@ struct DescriptorLayoutBuilder
 {
     std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-    void add_binding(uint32_t binding, VkDescriptorType type);
+    void add_binding(u32 binding, VkDescriptorType type);
 
     void clear();
 
@@ -23,10 +23,10 @@ public:
     struct PoolSizeRatio
     {
         VkDescriptorType type;
-        float ratio;
+        f32 ratio;
     };
 
-    void init(VkDevice device, uint32_t initial_sets, std::span<PoolSizeRatio> pool_ratios);
+    void init(VkDevice device, u32 initial_sets, std::span<PoolSizeRatio> pool_ratios);
 
     void clear_pools(VkDevice device);
 
@@ -41,12 +41,12 @@ private:
     std::vector<PoolSizeRatio> ratios;
     std::vector<VkDescriptorPool> full_pools;
     std::vector<VkDescriptorPool> ready_pools;
-    uint32_t sets_per_pool;
+    u32 sets_per_pool;
 
     VkDescriptorPool get_pool(VkDevice device);
 
     VkDescriptorPool create_pool(
-        VkDevice device, uint32_t set_count, std::span<PoolSizeRatio> pool_ratios);
+        VkDevice device, u32 set_count, std::span<PoolSizeRatio> pool_ratios);
 };
 
 struct DescriptorWriter
@@ -59,7 +59,7 @@ struct DescriptorWriter
         VkDescriptorType type);
 
     void write_buffer(
-        int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
+        int binding, VkBuffer buffer, usize size, usize offset, VkDescriptorType type);
 
     void clear();
 

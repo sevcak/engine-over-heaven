@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include <core/types.hpp>
 #include <string_view>
 
 namespace StringUtils
@@ -14,13 +13,13 @@ namespace StringUtils
  *
  * @returns 32-bit FNV-1a hash of the string.
  */
-constexpr uint32_t fnvia_32(char const *s, std::size_t count)
+constexpr u32 fnvia_32(char const *s, usize count)
 {
     // FNV offset basis.
-    uint32_t hash = 2166136261u;
+    u32 hash = 2166136261u;
 
-    for (std::size_t i = 0; i < count; i++) {
-        hash ^= static_cast<uint32_t>(s[i]);
+    for (usize i = 0; i < count; i++) {
+        hash ^= static_cast<u32>(s[i]);
         //      FNV prime.
         hash *= 16777619u;
     }
@@ -28,9 +27,9 @@ constexpr uint32_t fnvia_32(char const *s, std::size_t count)
     return hash;
 }
 
-constexpr std::size_t const_strlen(const char *s)
+constexpr usize const_strlen(const char *s)
 {
-    size_t size = 0;
+    usize size = 0;
     while (s[size]) {
         size++;
     };
@@ -39,16 +38,16 @@ constexpr std::size_t const_strlen(const char *s)
 
 struct StringHash
 {
-    uint32_t computed_hash;
+    u32 computed_hash;
 
-    constexpr StringHash(uint32_t hash) noexcept : computed_hash { hash } {}
+    constexpr StringHash(u32 hash) noexcept : computed_hash { hash } {}
 
     constexpr StringHash(const char *s) noexcept : computed_hash { 0 }
     {
         computed_hash = fnvia_32(s, const_strlen(s));
     }
 
-    constexpr StringHash(const char *s, std::size_t count) noexcept : computed_hash { 0 }
+    constexpr StringHash(const char *s, usize count) noexcept : computed_hash { 0 }
     {
         computed_hash = fnvia_32(s, count);
     }
@@ -60,7 +59,7 @@ struct StringHash
 
     StringHash(const StringHash &other) = default;
 
-    constexpr operator uint32_t() const noexcept { return computed_hash; }
+    constexpr operator u32() const noexcept { return computed_hash; }
 
     constexpr bool operator==(const StringHash &other) const noexcept
     {
@@ -73,5 +72,5 @@ struct StringHash
 template <>
 struct std::hash<StringUtils::StringHash>
 {
-    size_t operator()(const StringUtils::StringHash &k) const noexcept { return k.computed_hash; }
+    usize operator()(const StringUtils::StringHash &k) const noexcept { return k.computed_hash; }
 };

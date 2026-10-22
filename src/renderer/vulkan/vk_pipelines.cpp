@@ -12,11 +12,11 @@ bool vkutil::load_shader_module(const char *file_path, VkDevice device, VkShader
         return false;
     }
 
-    size_t file_size = (size_t) file.tellg();
+    usize file_size = (usize) file.tellg();
 
     // Spir-V expects the buffer to be uint32.
     // Reserve a vector big enough for the entire file.
-    std::vector<uint32_t> buffer(file_size / sizeof(uint32_t));
+    std::vector<u32> buffer(file_size / sizeof(u32));
 
     file.seekg(0);
     // Read the entire file into the buffer.
@@ -28,7 +28,7 @@ bool vkutil::load_shader_module(const char *file_path, VkDevice device, VkShader
     create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     create_info.pNext = nullptr;
 
-    create_info.codeSize = buffer.size() * sizeof(uint32_t);
+    create_info.codeSize = buffer.size() * sizeof(u32);
     create_info.pCode = buffer.data();
 
     // Check if creation went well.
@@ -78,7 +78,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
     VkGraphicsPipelineCreateInfo pipeline_info =
         { .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
     pipeline_info.pNext = &_render_info;
-    pipeline_info.stageCount = (uint32_t) _shader_stages.size();
+    pipeline_info.stageCount = (u32) _shader_stages.size();
     pipeline_info.pStages = _shader_stages.data();
     pipeline_info.pVertexInputState = &_vertex_input_info;
     pipeline_info.pInputAssemblyState = &_input_assembly;

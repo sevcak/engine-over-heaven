@@ -1,7 +1,7 @@
 #pragma once
 
 #include "string_utils.hpp"
-#include <cstdint>
+#include <core/types.hpp>
 
 class CVarParameter;
 
@@ -12,23 +12,23 @@ public:
 
     virtual CVarParameter *get_cvar(StringUtils::StringHash hash) = 0;
 
-    virtual double *get_float_cvar(StringUtils::StringHash hash) = 0;
+    virtual f64 *get_float_cvar(StringUtils::StringHash hash) = 0;
 
-    virtual int32_t *get_int_cvar(StringUtils::StringHash hash) = 0;
+    virtual i32 *get_int_cvar(StringUtils::StringHash hash) = 0;
 
     virtual const char *get_string_cvar(StringUtils::StringHash hash) = 0;
 
-    virtual void set_float_cvar(StringUtils::StringHash hash, double value) = 0;
+    virtual void set_float_cvar(StringUtils::StringHash hash, f64 value) = 0;
 
-    virtual void set_int_cvar(StringUtils::StringHash hash, int32_t value) = 0;
+    virtual void set_int_cvar(StringUtils::StringHash hash, i32 value) = 0;
 
     virtual void set_string_cvar(StringUtils::StringHash hash, const char *value) = 0;
 
     virtual CVarParameter *create_float_cvar(
-        const char *name, const char *description, double default_value, double current_value) = 0;
+        const char *name, const char *description, f64 default_value, f64 current_value) = 0;
 
     virtual CVarParameter *create_int_cvar(const char *name, const char *description,
-        int32_t default_value, int32_t current_value) = 0;
+        i32 default_value, i32 current_value) = 0;
 
     virtual CVarParameter *create_string_cvar(const char *name, const char *description,
         const char *default_value, const char *current_value) = 0;
@@ -36,7 +36,7 @@ public:
     virtual void draw_imgui_editor() = 0;
 };
 
-enum class CVarFlags : uint32_t
+enum class CVarFlags : u32
 {
     None = 0,
     Noedit = 1 << 1,
@@ -55,24 +55,24 @@ protected:
     using CVarType = T;
 };
 
-struct AutoCVar_Float : AutoCVar<double>
+struct AutoCVar_Float : AutoCVar<f64>
 {
-    AutoCVar_Float(const char *name, const char *description, double default_vlaue,
+    AutoCVar_Float(const char *name, const char *description, f64 default_vlaue,
         CVarFlags flags = CVarFlags::None);
 
-    double get();
+    f64 get();
 
-    void set(double val);
+    void set(f64 val);
 };
 
-struct AutoCVar_Int : AutoCVar<int32_t>
+struct AutoCVar_Int : AutoCVar<i32>
 {
-    AutoCVar_Int(const char *name, const char *description, int32_t default_value,
+    AutoCVar_Int(const char *name, const char *description, i32 default_value,
         CVarFlags flags = CVarFlags::None);
 
-    int32_t get();
+    i32 get();
 
-    void set(int32_t val);
+    void set(i32 val);
 };
 
 struct AutoCVar_String : AutoCVar<std::string>

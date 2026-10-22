@@ -6,13 +6,14 @@
 #include <memory>
 #include <concepts>
 #include <cstdlib>
+#include <core/types.hpp>
 #include <logger/logger.hpp>
 
 #include <vulkan/vulkan.h>
 
 class VulkanRenderer;
 
-enum MaterialPass : uint8_t
+enum MaterialPass : u8
 {
     Opaque = 0,
     Transparent,
@@ -102,7 +103,7 @@ public:
 class GLTFMetallic_Roughness : public IMaterialType
 {
 public:
-    std::array<MaterialPipeline, static_cast<std::size_t>(MaterialPass::MaxPasses)> pipelines;
+    std::array<MaterialPipeline, static_cast<usize>(MaterialPass::MaxPasses)> pipelines;
 
     VkDescriptorSetLayout material_layout { VK_NULL_HANDLE };
 
@@ -121,7 +122,7 @@ public:
         AllocatedImage metal_rough_image;
         VkSampler metal_rough_sampler;
         VkBuffer data_buffer;
-        uint32_t data_buffer_offset;
+        u32 data_buffer_offset;
     };
 
     MaterialInstance write_material(VkDevice device, MaterialPass pass,

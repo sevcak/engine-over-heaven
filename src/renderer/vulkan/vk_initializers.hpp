@@ -4,8 +4,8 @@
 
 namespace vkinit {
 
-VkCommandPoolCreateInfo command_pool_create_info(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0);
-VkCommandBufferAllocateInfo command_buffer_allocate_info(VkCommandPool pool, uint32_t count = 1);
+VkCommandPoolCreateInfo command_pool_create_info(u32 queueFamilyIndex, VkCommandPoolCreateFlags flags = 0);
+VkCommandBufferAllocateInfo command_buffer_allocate_info(VkCommandPool pool, u32 count = 1);
 
 VkCommandBufferBeginInfo command_buffer_begin_info(VkCommandBufferUsageFlags flags = 0);
 VkCommandBufferSubmitInfo command_buffer_submit_info(VkCommandBuffer cmd);
@@ -30,13 +30,13 @@ VkImageSubresourceRange image_subresource_range(VkImageAspectFlags aspectMask);
 
 VkSemaphoreSubmitInfo semaphore_submit_info(VkPipelineStageFlags2 stageMask, VkSemaphore semaphore);
 VkDescriptorSetLayoutBinding descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags,
-    uint32_t binding);
+    u32 binding);
 VkDescriptorSetLayoutCreateInfo descriptorset_layout_create_info(VkDescriptorSetLayoutBinding* bindings,
-    uint32_t bindingCount);
+    u32 bindingCount);
 VkWriteDescriptorSet write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet,
-    VkDescriptorImageInfo* imageInfo, uint32_t binding);
+    VkDescriptorImageInfo* imageInfo, u32 binding);
 VkWriteDescriptorSet write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet,
-    VkDescriptorBufferInfo* bufferInfo, uint32_t binding);
+    VkDescriptorBufferInfo* bufferInfo, u32 binding);
 VkDescriptorBufferInfo buffer_info(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
 
 VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);

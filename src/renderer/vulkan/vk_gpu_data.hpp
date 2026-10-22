@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <core/types.hpp>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
@@ -14,10 +14,10 @@ struct GPUObjectData
      */
     glm::vec4 sphere_bounds;
     VkDeviceAddress vertex_buffer;
-    uint32_t padding[2];
+    u32 padding[2];
 };
 
 struct GPURenderStats
 {
-    uint32_t visible_triangles;
+    u32 visible_triangles;
 };

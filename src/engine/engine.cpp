@@ -138,10 +138,10 @@ void Engine::run()
             ImGui::SliderInt("Effect Index", &renderer._current_background_effect, 0,
                 renderer._background_effects.size() - 1);
 
-            ImGui::InputFloat4("data1", (float *)&selected.data.data1);
-            ImGui::InputFloat4("data2", (float *)&selected.data.data2);
-            ImGui::InputFloat4("data3", (float *)&selected.data.data3);
-            ImGui::InputFloat4("data4", (float *)&selected.data.data4);
+            ImGui::InputFloat4("data1", (f32 *)&selected.data.data1);
+            ImGui::InputFloat4("data2", (f32 *)&selected.data.data2);
+            ImGui::InputFloat4("data3", (f32 *)&selected.data.data3);
+            ImGui::InputFloat4("data4", (f32 *)&selected.data.data4);
         }
         ImGui::End();
 
@@ -188,17 +188,17 @@ void Engine::update_scene()
 {
     auto start_time = std::chrono::system_clock::now();
 
-    float dt = stats.frametime / 1000.0f;
+    f32 dt = stats.frametime / 1000.0f;
     if (dt <= 0.0f) {
         dt = 1.0f / 60.0f;
     }
     camera_controller.update(dt);
 
     glm::mat4 view = main_camera.get_view_matrix();
-    float fov_deg = std::clamp(static_cast<float>(cvar_main_fov.get()), 10.0f, 170.0f);
+    f32 fov_deg = std::clamp(static_cast<f32>(cvar_main_fov.get()), 10.0f, 170.0f);
     const VkExtent2D extent = renderer._swapchain_extent;
     glm::mat4 projection = glm::perspective(glm::radians(fov_deg),
-        (float)extent.width / (float)extent.height, 10000.0f,
+        (f32)extent.width / (f32)extent.height, 10000.0f,
         0.1f);
     projection[1][1] *= -1;
 

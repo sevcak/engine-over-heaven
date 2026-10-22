@@ -1,6 +1,6 @@
 #include <vk_initializers.hpp>
 
-VkCommandPoolCreateInfo vkinit::command_pool_create_info(uint32_t queueFamilyIndex,
+VkCommandPoolCreateInfo vkinit::command_pool_create_info(u32 queueFamilyIndex,
     VkCommandPoolCreateFlags flags /*= 0*/)
 {
     VkCommandPoolCreateInfo info = {};
@@ -13,7 +13,7 @@ VkCommandPoolCreateInfo vkinit::command_pool_create_info(uint32_t queueFamilyInd
 
 
 VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
-    VkCommandPool pool, uint32_t count /*= 1*/)
+    VkCommandPool pool, u32 count /*= 1*/)
 {
     VkCommandBufferAllocateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -188,7 +188,7 @@ VkImageSubresourceRange vkinit::image_subresource_range(VkImageAspectFlags aspec
 
 
 VkDescriptorSetLayoutBinding vkinit::descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags,
-    uint32_t binding)
+    u32 binding)
 {
     VkDescriptorSetLayoutBinding setbind = {};
     setbind.binding = binding;
@@ -201,7 +201,7 @@ VkDescriptorSetLayoutBinding vkinit::descriptorset_layout_binding(VkDescriptorTy
 }
 
 VkDescriptorSetLayoutCreateInfo vkinit::descriptorset_layout_create_info(VkDescriptorSetLayoutBinding* bindings,
-    uint32_t bindingCount)
+    u32 bindingCount)
 {
     VkDescriptorSetLayoutCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -215,7 +215,7 @@ VkDescriptorSetLayoutCreateInfo vkinit::descriptorset_layout_create_info(VkDescr
 }
 
 VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet,
-    VkDescriptorImageInfo* imageInfo, uint32_t binding)
+    VkDescriptorImageInfo* imageInfo, u32 binding)
 {
     VkWriteDescriptorSet write = {};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -231,7 +231,7 @@ VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDes
 }
 
 VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet,
-    VkDescriptorBufferInfo* bufferInfo, uint32_t binding)
+    VkDescriptorBufferInfo* bufferInfo, u32 binding)
 {
     VkWriteDescriptorSet write = {};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

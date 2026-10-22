@@ -184,11 +184,11 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             auto &tex = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex];
 
             if (tex.imageIndex.has_value() && *tex.imageIndex < images.size()) {
-                size_t img = *tex.imageIndex;
+                usize img = *tex.imageIndex;
                 material_resources.color_image = images[img];
             }
             if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
-                size_t sampler = *tex.samplerIndex;
+                usize sampler = *tex.samplerIndex;
                 material_resources.color_sampler = file.samplers[sampler];
             }
         }
@@ -199,7 +199,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
                 material_resources.metal_rough_image = images[*tex.imageIndex];
             }
             if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
-                size_t sampler = *tex.samplerIndex;
+                usize sampler = *tex.samplerIndex;
                 material_resources.metal_rough_sampler = file.samplers[sampler];
             }
         }
@@ -210,7 +210,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
         data_index++;
     }
 
-    std::vector<uint32_t> indices;
+    std::vector<u32> indices;
     std::vector<Vertex> vertices;
     for (fastgltf::Mesh &mesh : gltf.meshes) {
         std::shared_ptr<MeshAsset> new_mesh = std::make_shared<MeshAsset>();
@@ -223,18 +223,18 @@ std::unique_ptr<LoadedGLTF> load_gltf(
 
         for (auto &p : mesh.primitives) {
             GeoSurface new_surface;
-            new_surface.start_index = (uint32_t)indices.size();
-            new_surface.count = (uint32_t)gltf.accessors[p.indicesAccessor.value()].count;
+            new_surface.start_index = (u32)indices.size();
+            new_surface.count = (u32)gltf.accessors[p.indicesAccessor.value()].count;
 
-            size_t initial_vert = vertices.size();
+            usize initial_vert = vertices.size();
 
             // Load indices.
             {
                 const auto &index_accessor = gltf.accessors[p.indicesAccessor.value()];
                 indices.reserve(indices.size() + index_accessor.count);
 
-                fastgltf::iterateAccessor<std::uint32_t>(gltf, index_accessor,
-                    [&](std::uint32_t idx) { indices.push_back(idx + initial_vert); });
+                fastgltf::iterateAccessor<u32>(gltf, index_accessor,
+                    [&](u32 idx) { indices.push_back(idx + initial_vert); });
             }
 
             // Load vertex positions.
@@ -248,7 +248,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
                 vertices.resize(vertices.size() + pos_accessor.count);
 
                 fastgltf::iterateAccessorWithIndex<glm::vec3>(
-                    gltf, pos_accessor, [&](glm::vec3 v, size_t index) {
+                    gltf, pos_accessor, [&](glm::vec3 v, usize index) {
                         Vertex new_vert;
                         new_vert.position = v;
                         new_vert.normal = { 1.0f, 0.0f, 0.0f };
@@ -264,7 +264,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             if (normals_it != p.attributes.end()) {
                 const auto &norm_accessor = gltf.accessors[normals_it->accessorIndex];
                 fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, norm_accessor,
-                    [&](glm::vec3 v, size_t index) { vertices[initial_vert + index].normal = v; });
+                    [&](glm::vec3 v, usize index) { vertices[initial_vert + index].normal = v; });
             }
 
             // Load UVs.
@@ -272,7 +272,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             if (uv_it != p.attributes.end()) {
                 const auto &uv_accessor = gltf.accessors[uv_it->accessorIndex];
                 fastgltf::iterateAccessorWithIndex<glm::vec2>(
-                    gltf, uv_accessor, [&](glm::vec2 v, size_t index) {
+                    gltf, uv_accessor, [&](glm::vec2 v, usize index) {
                         vertices[initial_vert + index].uv_x = v.x;
                         vertices[initial_vert + index].uv_y = v.y;
                     });
@@ -283,7 +283,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             if (color_it != p.attributes.end()) {
                 const auto &color_accessor = gltf.accessors[color_it->accessorIndex];
                 fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, color_accessor,
-                    [&](glm::vec4 v, size_t index) { vertices[initial_vert + index].color = v; });
+                    [&](glm::vec4 v, usize index) { vertices[initial_vert + index].color = v; });
             }
 
             if (p.materialIndex.has_value()) {
@@ -346,7 +346,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
     }
 
     // Set up the transform hierarchy.
-    for (size_t i = 0; i < gltf.nodes.size(); i++) {
+    for (usize i = 0; i < gltf.nodes.size(); i++) {
         fastgltf::Node &node = gltf.nodes[i];
         std::shared_ptr<Node> &scene_node = nodes[i];
 
@@ -416,8 +416,8 @@ std::optional<AllocatedImage> load_image(
                 unsigned char *data = stbi_load(path.c_str(), &width, &height, &n_channels, 4);
                 if (data) {
                     VkExtent3D image_size;
-                    image_size.width = (uint32_t)width;
-                    image_size.height = (uint32_t)height;
+                    image_size.width = (u32)width;
+                    image_size.height = (u32)height;
                     image_size.depth = 1;
 
                     new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
@@ -432,8 +432,8 @@ std::optional<AllocatedImage> load_image(
                     static_cast<int>(vector.bytes.size()), &width, &height, &n_channels, 4);
                 if (data) {
                     VkExtent3D image_size;
-                    image_size.width = static_cast<uint32_t>(width);
-                    image_size.height = static_cast<uint32_t>(height);
+                    image_size.width = static_cast<u32>(width);
+                    image_size.height = static_cast<u32>(height);
                     image_size.depth = 1;
 
                     new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
@@ -468,8 +468,8 @@ std::optional<AllocatedImage> load_image(
                         static_cast<int>(buffer_view.byteLength), &width, &height, &n_channels, 4);
 
                     if (data) {
-                        VkExtent3D image_size = { static_cast<uint32_t>(width),
-                            static_cast<uint32_t>(height), 1 };
+                        VkExtent3D image_size = { static_cast<u32>(width),
+                            static_cast<u32>(height), 1 };
                         new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                             VK_IMAGE_USAGE_SAMPLED_BIT, true);
                         stbi_image_free(data);

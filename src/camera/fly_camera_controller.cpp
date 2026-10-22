@@ -40,16 +40,16 @@ void FlyCameraController::process_sdl_event(const SDL_Event &e)
 
     if (is_captured && e.type == SDL_MOUSEMOTION) {
         if (camera) {
-            camera->yaw += static_cast<float>(e.motion.xrel) * mouse_sensitivity;
-            camera->pitch -= static_cast<float>(e.motion.yrel) * mouse_sensitivity;
+            camera->yaw += static_cast<f32>(e.motion.xrel) * mouse_sensitivity;
+            camera->pitch -= static_cast<f32>(e.motion.yrel) * mouse_sensitivity;
 
-            const float pitch_limit = glm::radians(89.0f);
+            const f32 pitch_limit = glm::radians(89.0f);
             camera->pitch = std::clamp(camera->pitch, -pitch_limit, pitch_limit);
         }
     }
 }
 
-void FlyCameraController::update(float dt)
+void FlyCameraController::update(f32 dt)
 {
     if (!camera || dt <= 0.0f) {
         return;
@@ -88,7 +88,7 @@ void FlyCameraController::update(float dt)
     if (glm::length(move_dir) > 0.001f) {
         move_dir = glm::normalize(move_dir);
 
-        float current_speed = move_speed;
+        f32 current_speed = move_speed;
         if (state[SDL_SCANCODE_LSHIFT]) {
             current_speed *= sprint_multiplier;
         }

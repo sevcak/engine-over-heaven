@@ -17,8 +17,13 @@
 - [ ] Refactor CMake shader compilation to automatically detect and compile new shaders without manual globbing/caching issues.
 - [ ] Implement a proper virtual file system or path resolution system to avoid hardcoding relative paths (e.g., `../../shaders/...`) in engine code.
 
+## Scene Management
+
+- [ ] Implement support for Universal Scene Description (USD).
+
 ## Rendering
 
+- [ ] Implement normal mapping.
 - [ ] Implement support for dynamic scenes with moving objects.
 - [ ] Implement GPU-driven occlusion culling.
 - [ ] Migrate from monolithic `VkPipeline` to Shader Objects (`VK_EXT_shader_object`).
