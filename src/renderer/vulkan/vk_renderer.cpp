@@ -961,22 +961,22 @@ void VulkanRenderer::draw_geometry(
         writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
         writer.write_buffer(1, scene.object_buffer.buffer,
-            scene.object_buffer.info.size, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.update_set(_device, global_descriptor);
     }
 
     {
         DescriptorWriter compute_writer;
         compute_writer.write_buffer(0, scene.object_buffer.buffer,
-            scene.object_buffer.info.size, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(1, get_current_frame().indirect_buffer.buffer,
-            get_current_frame().indirect_buffer.info.size, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(2, get_current_frame().render_stats_buffer.buffer,
             sizeof(GPURenderStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(3, scene.input_command_buffer.buffer,
-            scene.input_command_buffer.info.size, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(4, get_current_frame().transparent_order_buffer.buffer,
-            get_current_frame().transparent_order_buffer.info.size, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
         compute_writer.update_set(_device, get_current_frame().compute_descriptor);
     }
