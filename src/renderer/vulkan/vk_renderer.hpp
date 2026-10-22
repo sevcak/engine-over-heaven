@@ -233,8 +233,6 @@ public:
 
     int _frame_number { 0 };
 
-    VkExtent2D _window_extent { 1920, 1080 };
-
     struct SDL_Window *_window { nullptr };
 
     VkInstance _instance;
@@ -273,8 +271,6 @@ public:
     VkDescriptorSet _draw_image_descriptors;
     VkDescriptorSetLayout _draw_image_descriptor_layout;
 
-    VkDescriptorSetLayout _single_image_descriptor_layout;
-
     GPUSceneData scene_data;
 
     VkDescriptorSetLayout _gpu_scene_data_descriptor_layout;
@@ -282,9 +278,6 @@ public:
     VkDescriptorSetLayout _compute_descriptor_layout;
 
     VkPipelineLayout _gradient_pipeline_layout;
-
-    VkPipelineLayout _mesh_pipeline_layout;
-    VkPipeline _mesh_pipeline;
 
     VkPipelineLayout _cull_pipeline_layout;
     VkPipeline _cull_pipeline;
@@ -338,14 +331,14 @@ public:
     void destroy_buffer(const AllocatedBuffer &buffer);
     void destroy_image(const AllocatedImage &img);
 
-    void resize_swapchain();
+    void resize_swapchain(uint32_t width, uint32_t height);
 
 private:
     constexpr static std::size_t MAX_OBJECTS = 100000;
 
     void init_vulkan();
 
-    void init_swapchain();
+    void init_swapchain(uint32_t width, uint32_t height);
 
     void init_commands();
 
@@ -356,8 +349,6 @@ private:
     void init_pipelines();
 
     void init_background_pipelines();
-
-    void init_mesh_pipeline();
 
     void init_compute_pipeline();
 

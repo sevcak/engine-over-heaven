@@ -1,5 +1,3 @@
-// vulkan_guide.h : Include file for standard system include files,
-// or project specific include files.
 #pragma once
 
 #include <memory>
@@ -64,16 +62,6 @@ struct GPUMeshBuffers
     AllocatedBuffer index_buffer;
     AllocatedBuffer vertex_buffer;
     VkDeviceAddress vertex_buffer_address;
-};
-
-/**
- * Structure holding the push constants for mesh object drawing.
- */
-struct GPUDrawPushConstants
-{
-    /* World/Model Matrix */
-    glm::mat4 world_matrix;
-    VkDeviceAddress vertex_buffer;
 };
 
 struct DrawContext;

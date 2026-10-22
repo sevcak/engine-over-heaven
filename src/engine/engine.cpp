@@ -17,29 +17,23 @@
 
 #include <cvars.hpp>
 
-Engine *loaded_engine = nullptr;
-
 static AutoCVar_Float cvar_main_fov(
     "r.main_fov", "FOV for the main camera", 70.0f, CVarFlags::EditFloatDrag);
 
-Engine &Engine::get()
-{
-    return *loaded_engine;
-}
-
 void Engine::init()
 {
-    assert(loaded_engine == nullptr);
-    loaded_engine = this;
-
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
+    constexpr int STARTUP_WIDTH = 1920;
+    constexpr int STARTUP_HEIGHT = 1080;
     _window = SDL_CreateWindow("Engine Over Heaven", SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED, _window_extent.width, _window_extent.height, window_flags);
+        SDL_WINDOWPOS_UNDEFINED, STARTUP_WIDTH, STARTUP_HEIGHT, window_flags);
 
-    renderer.init(_window, _window_extent.width, _window_extent.height);
+    int w, h;
+    SDL_Vulkan_GetDrawableSize(_window, &w, &h);
+    renderer.init(_window, w, h);
 
     main_camera.velocity = glm::vec3(0.0f);
     main_camera.position = glm::vec3(0.0f, 3.0f, 0.0f);
@@ -78,8 +72,6 @@ void Engine::cleanup()
 
         SDL_DestroyWindow(_window);
     }
-
-    loaded_engine = nullptr;
 }
 
 void Engine::run()
@@ -117,7 +109,9 @@ void Engine::run()
         }
 
         if (_resize_requested) {
-            renderer.resize_swapchain();
+            int w, h;
+            SDL_Vulkan_GetDrawableSize(_window, &w, &h);
+            renderer.resize_swapchain(w, h);
             _resize_requested = false;
         }
 
@@ -202,8 +196,9 @@ void Engine::update_scene()
 
     glm::mat4 view = main_camera.get_view_matrix();
     float fov_deg = std::clamp(static_cast<float>(cvar_main_fov.get()), 10.0f, 170.0f);
+    const VkExtent2D extent = renderer._swapchain_extent;
     glm::mat4 projection = glm::perspective(glm::radians(fov_deg),
-        (float)renderer._window_extent.width / (float)renderer._window_extent.height, 10000.0f,
+        (float)extent.width / (float)extent.height, 10000.0f,
         0.1f);
     projection[1][1] *= -1;
 

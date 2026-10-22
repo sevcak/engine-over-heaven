@@ -33,8 +33,6 @@ struct MeshNode : public Node
 class VulkanRenderer;
 struct DrawContext;
 
-std::optional<std::vector<std::shared_ptr<MeshAsset>>> load_gltf_meshes(
-    VulkanRenderer *renderer, std::filesystem::path file_path);
 
 struct LoadedGLTF : public IRenderable
 {

@@ -1,6 +1,5 @@
 #include <vk_initializers.hpp>
 
-//> init_cmd
 VkCommandPoolCreateInfo vkinit::command_pool_create_info(uint32_t queueFamilyIndex,
     VkCommandPoolCreateFlags flags /*= 0*/)
 {
@@ -25,9 +24,7 @@ VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
     info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     return info;
 }
-//< init_cmd
-// 
-//> init_cmd_draw
+
 VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageFlags flags /*= 0*/)
 {
     VkCommandBufferBeginInfo info = {};
@@ -38,9 +35,7 @@ VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageF
     info.flags = flags;
     return info;
 }
-//< init_cmd_draw
 
-//> init_sync
 VkFenceCreateInfo vkinit::fence_create_info(VkFenceCreateFlags flags /*= 0*/)
 {
     VkFenceCreateInfo info = {};

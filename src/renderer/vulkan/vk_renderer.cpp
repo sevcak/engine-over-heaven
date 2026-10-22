@@ -85,10 +85,9 @@ void Scene::load_data(VulkanRenderer *renderer, const SceneDefinition &definitio
 void VulkanRenderer::init(SDL_Window *window, uint32_t width, uint32_t height)
 {
     _window = window;
-    _window_extent = { width, height };
 
     init_vulkan();
-    init_swapchain();
+    init_swapchain(width, height);
     init_commands();
     init_sync_structures();
     init_descriptors();
@@ -301,11 +300,11 @@ void VulkanRenderer::init_vulkan()
     _main_deletion_queue.push_function([&]() { vmaDestroyAllocator(_allocator); });
 }
 
-void VulkanRenderer::init_swapchain()
+void VulkanRenderer::init_swapchain(uint32_t width, uint32_t height)
 {
-    create_swapchain(_window_extent.width, _window_extent.height);
+    create_swapchain(width, height);
 
-    VkExtent3D draw_image_extent = { _window_extent.width, _window_extent.height, 1 };
+    VkExtent3D draw_image_extent = { width, height, 1 };
 
     _draw_image.image_format = VK_FORMAT_R16G16B16A16_SFLOAT;
     _draw_image.image_extent = draw_image_extent;
@@ -459,14 +458,6 @@ void VulkanRenderer::init_descriptors()
         vkDestroyDescriptorSetLayout(_device, _gpu_scene_data_descriptor_layout, nullptr);
     });
 
-    {
-        DescriptorLayoutBuilder builder;
-        builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        _single_image_descriptor_layout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
-    }
-    _main_deletion_queue.push_function(
-        [&]() { vkDestroyDescriptorSetLayout(_device, _single_image_descriptor_layout, nullptr); });
-
     DescriptorLayoutBuilder compute_builder;
     compute_builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene Object buffer.
     compute_builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's indirect buffer.
@@ -487,7 +478,6 @@ void VulkanRenderer::init_descriptors()
 void VulkanRenderer::init_pipelines()
 {
     init_background_pipelines();
-    init_mesh_pipeline();
     init_compute_pipeline();
 
     _material_system.register_type<GLTFMetallic_Roughness>();
@@ -569,57 +559,6 @@ void VulkanRenderer::init_background_pipelines()
         vkDestroyPipelineLayout(_device, _gradient_pipeline_layout, nullptr);
         vkDestroyPipeline(_device, gradient_effect.pipeline, nullptr);
         vkDestroyPipeline(_device, sky_effect.pipeline, nullptr);
-    });
-}
-
-void VulkanRenderer::init_mesh_pipeline()
-{
-    VkShaderModule triangle_frag_shader;
-    if (!vkutil::load_shader_module(
-            "../shaders/tex_image.frag.spv", _device, &triangle_frag_shader)) {
-        OH_LOG_ERROR("Error building the triangle fragment shader module.");
-    }
-
-    VkShaderModule triangle_vertex_shader;
-    if (!vkutil::load_shader_module(
-            "../shaders/colored_triangle_mesh.vert.spv", _device, &triangle_vertex_shader)) {
-        OH_LOG_ERROR("Error building the triangle vertex shader module.");
-    }
-
-    VkPushConstantRange buffer_range {};
-    buffer_range.offset = 0;
-    buffer_range.size = sizeof(GPUDrawPushConstants);
-    buffer_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-    pipeline_layout_info.pPushConstantRanges = &buffer_range;
-    pipeline_layout_info.pushConstantRangeCount = 1;
-    pipeline_layout_info.pSetLayouts = &_single_image_descriptor_layout;
-    pipeline_layout_info.setLayoutCount = 1;
-
-    VK_CHECK(
-        vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_mesh_pipeline_layout));
-
-    PipelineBuilder pipeline_builder;
-    pipeline_builder._pipeline_layout = _mesh_pipeline_layout;
-    pipeline_builder.set_shaders(triangle_vertex_shader, triangle_frag_shader);
-    pipeline_builder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    pipeline_builder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipeline_builder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-    pipeline_builder.set_multisampling_none();
-    pipeline_builder.enable_blending_alphablend();
-    pipeline_builder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-    pipeline_builder.set_color_attachment_format(_draw_image.image_format);
-    pipeline_builder.set_depth_format(_depth_image.image_format);
-
-    _mesh_pipeline = pipeline_builder.build_pipeline(_device);
-
-    vkDestroyShaderModule(_device, triangle_frag_shader, nullptr);
-    vkDestroyShaderModule(_device, triangle_vertex_shader, nullptr);
-
-    _main_deletion_queue.push_function([&]() {
-        vkDestroyPipelineLayout(_device, _mesh_pipeline_layout, nullptr);
-        vkDestroyPipeline(_device, _mesh_pipeline, nullptr);
     });
 }
 
@@ -1119,23 +1058,6 @@ void VulkanRenderer::draw_geometry(
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             last_material->pipeline->layout, 1, 1, &last_material->material_set, 0, nullptr);
 
-        VkViewport vp = {
-            .x = 0,
-            .y = 0,
-            .width = (float)_window_extent.width,
-            .height = (float)_window_extent.height,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-        };
-        vkCmdSetViewport(cmd, 0, 1, &vp);
-
-        VkRect2D sc;
-        sc.offset.x = 0;
-        sc.offset.y = 0;
-        sc.extent.width = _window_extent.width;
-        sc.extent.height = _window_extent.height;
-        vkCmdSetScissor(cmd, 0, 1, &sc);
-
         vkCmdBindIndexBuffer(cmd, last_index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
         uint32_t offset = batch_start * sizeof(VkDrawIndexedIndirectCommand);
@@ -1264,18 +1186,12 @@ GPUMeshBuffers VulkanRenderer::upload_mesh(std::span<uint32_t> indices, std::spa
     return new_surface;
 }
 
-void VulkanRenderer::resize_swapchain()
+void VulkanRenderer::resize_swapchain(uint32_t width, uint32_t height)
 {
     vkDeviceWaitIdle(_device);
 
     destroy_swapchain();
-
-    int w, h;
-    SDL_GetWindowSize(_window, &w, &h);
-    _window_extent.width = w;
-    _window_extent.height = h;
-
-    create_swapchain(_window_extent.width, _window_extent.height);
+    create_swapchain(width, height);
 }
 
 AllocatedImage VulkanRenderer::create_image(

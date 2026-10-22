@@ -34,11 +34,6 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
         OH_LOG_ERROR("Error building the triangle vertex shader module.");
     }
 
-    VkPushConstantRange matrix_range {};
-    matrix_range.offset = 0;
-    matrix_range.size = sizeof(GPUDrawPushConstants);
-    matrix_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
     DescriptorLayoutBuilder layout_builder;
     layout_builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     layout_builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -53,8 +48,6 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
     mesh_layout_info.setLayoutCount = 2;
     mesh_layout_info.pSetLayouts = layouts;
-    mesh_layout_info.pPushConstantRanges = &matrix_range;
-    mesh_layout_info.pushConstantRangeCount = 1;
 
     VkPipelineLayout new_layout;
     VK_CHECK(vkCreatePipelineLayout(renderer->_device, &mesh_layout_info, nullptr, &new_layout));

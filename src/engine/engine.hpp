@@ -18,11 +18,7 @@ public:
     bool _stop_rendering { false };
     bool _resize_requested { false };
 
-    int _frame_number { 0 };
-
     EngineStats stats;
-
-    VkExtent2D _window_extent { 1920, 1080 };
 
     SDL_Window *_window { nullptr };
 
@@ -39,8 +35,6 @@ public:
 
     Camera main_camera;
     FlyCameraController camera_controller;
-
-    static Engine &get();
 
     void init();
     void cleanup();
