@@ -3,6 +3,9 @@ add_library(vulkan_renderer STATIC
     vk_renderer.hpp
     vk_descriptors.cpp
     vk_descriptors.hpp
+    vk_frame.hpp
+    vk_gpu_data.cpp
+    vk_gpu_data.hpp
     vk_images.cpp
     vk_images.hpp
     vk_initializers.cpp
@@ -13,6 +16,7 @@ add_library(vulkan_renderer STATIC
     vk_loader.hpp
     vk_material_system.cpp
     vk_material_system.hpp
+    vk_render_scene.hpp
     vk_types.hpp
 )
 

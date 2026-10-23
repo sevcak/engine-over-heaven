@@ -5,11 +5,19 @@
 #include <camera/camera.hpp>
 #include <camera/fly_camera_controller.hpp>
 #include <memory>
+#include <scene/scene.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 struct SDL_Window;
+
+struct FrameStats
+{
+    f32 frametime;
+    f32 scene_update_time;
+    RenderStats render;
+};
 
 class Engine
 {
@@ -18,7 +26,7 @@ public:
     bool _stop_rendering { false };
     bool _resize_requested { false };
 
-    EngineStats stats;
+    FrameStats stats;
 
     SDL_Window *_window { nullptr };
 

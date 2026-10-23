@@ -31,7 +31,12 @@
 
 ## Refactor
 
-- [ ] Decouple Material System from `VulkanRenderer`. Pass a smaller `RenderContext` or `DeviceContext` into `IMaterialType::build_pipelines` instead of the monolithic `VulkanRenderer*`.
+- [ ] Extract `GpuContext` and the resource functions
+- [ ] Extract `DefaultResources`, decouple the loader and the scene builder
+- [ ] Split the renderer into swapchain and passes
+- [ ] Make teardown explicit
+- [ ] Decompose the glTF loader
+- [ ] Separate the engine loop from the debug UI 
 
 ## Profiling
 

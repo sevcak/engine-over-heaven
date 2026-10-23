@@ -121,11 +121,11 @@ void Engine::run()
 
         if (ImGui::Begin("Stats")) {
             ImGui::Text("Frametime: %f", stats.frametime);
-            ImGui::Text("Mesh Draw Time: %f", stats.mesh_draw_time);
             ImGui::Text("Scene Update Time: %f", stats.scene_update_time);
-            ImGui::Text("Total Triangles %i", stats.total_triangle_count);
-            ImGui::Text("Visible Triangles %i", stats.visible_triangle_count);
-            ImGui::Text("Draw calls %i", stats.drawcall_count);
+            ImGui::Text("Mesh Draw Time: %f", stats.render.mesh_draw_time);
+            ImGui::Text("Total Triangles %i", stats.render.total_triangle_count);
+            ImGui::Text("Visible Triangles %i", stats.render.visible_triangle_count);
+            ImGui::Text("Draw calls %i", stats.render.drawcall_count);
         }
         ImGui::End();
 
@@ -146,9 +146,8 @@ void Engine::run()
         ImGui::End();
 
         if (ImGui::Begin("Scene")) {
-            const char *preview = current_scene_index >= 0
-                ? scene_definitions[current_scene_index].name.c_str()
-                : "";
+            const char *preview =
+                current_scene_index >= 0 ? scene_definitions[current_scene_index].name.c_str() : "";
             if (ImGui::BeginCombo("Scene", preview)) {
                 for (int i = 0; i < static_cast<int>(scene_definitions.size()); i++) {
                     const bool is_selected = (i == current_scene_index);
@@ -175,7 +174,7 @@ void Engine::run()
 
         update_scene();
 
-        renderer.draw(render_scene, main_camera, stats, _resize_requested);
+        renderer.draw(render_scene, main_camera, stats.render, _resize_requested);
 
         auto frame_end = std::chrono::system_clock::now();
         auto frame_elapsed =
@@ -197,9 +196,8 @@ void Engine::update_scene()
     glm::mat4 view = main_camera.get_view_matrix();
     f32 fov_deg = std::clamp(static_cast<f32>(cvar_main_fov.get()), 10.0f, 170.0f);
     const VkExtent2D extent = renderer._swapchain_extent;
-    glm::mat4 projection = glm::perspective(glm::radians(fov_deg),
-        (f32)extent.width / (f32)extent.height, 10000.0f,
-        0.1f);
+    glm::mat4 projection = glm::perspective(
+        glm::radians(fov_deg), (f32)extent.width / (f32)extent.height, 10000.0f, 0.1f);
     projection[1][1] *= -1;
 
     renderer.scene_data.camera_position = glm::vec4(main_camera.position, 1.0f);
@@ -228,6 +226,10 @@ void Engine::load_scene(int index)
     current_scene.gltfs.clear();
 
     current_scene.load_data(&renderer, scene_definitions[index]);
-    render_scene = renderer.init_render_scene(current_scene);
+
+    DrawContext surfaces;
+    current_scene.collect_surfaces(surfaces);
+    render_scene = renderer.init_render_scene(surfaces);
+
     current_scene_index = index;
 }

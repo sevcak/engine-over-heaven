@@ -2,6 +2,7 @@ add_subdirectory(logger)
 add_subdirectory(core)
 add_subdirectory(camera)
 add_subdirectory(renderer/vulkan)
+add_subdirectory(scene)
 add_subdirectory(engine)
 
 

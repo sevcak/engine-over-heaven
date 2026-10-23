@@ -72,27 +72,3 @@ class IRenderable
 {
     virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx) = 0;
 };
-
-struct Node : public IRenderable
-{
-    std::weak_ptr<Node> parent;
-    std::vector<std::shared_ptr<Node>> children;
-
-    glm::mat4 local_transform;
-    glm::mat4 world_transform;
-
-    void refresh_transform(const glm::mat4 &parent_matrix)
-    {
-        world_transform = parent_matrix * local_transform;
-        for (auto c : children) {
-            c->refresh_transform(world_transform);
-        }
-    }
-
-    virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx)
-    {
-        for (auto &c : children) {
-            c->draw(top_matrix, ctx);
-        }
-    }
-};

@@ -3,17 +3,17 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <logger/logger.hpp>
+#include <numeric>
 #include <vk_gpu_data.hpp>
 #include <vk_images.hpp>
 #include <vk_initializers.hpp>
 #include <vk_loader.hpp>
 #include <vk_pipelines.hpp>
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <numeric>
-#include <logger/logger.hpp>
 
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
@@ -41,45 +41,11 @@ static AutoCVar_Int cvar_cull(
 
 constexpr bool use_validation_layers = true;
 
-void EngineStats::reset_counters()
+void RenderStats::reset_counters()
 {
     drawcall_count = 0;
     visible_triangle_count = 0;
     total_triangle_count = 0;
-}
-
-void CullPushConstants::extract_frustum_planes(const glm::mat4 &vp)
-{
-    glm::vec4 row0 = glm::vec4(vp[0][0], vp[1][0], vp[2][0], vp[3][0]);
-    glm::vec4 row1 = glm::vec4(vp[0][1], vp[1][1], vp[2][1], vp[3][1]);
-    glm::vec4 row2 = glm::vec4(vp[0][2], vp[1][2], vp[2][2], vp[3][2]);
-    glm::vec4 row3 = glm::vec4(vp[0][3], vp[1][3], vp[2][3], vp[3][3]);
-
-    frustum_planes[0] = row3 + row0; // Left.
-    frustum_planes[1] = row3 - row0; // Right.
-    frustum_planes[2] = row3 + row1; // Bottom.
-    frustum_planes[3] = row3 - row1; // Top.
-    frustum_planes[4] = row3 + row2; // Near.
-    frustum_planes[5] = row3 - row2; // Far.
-
-    // Normalize the planes.
-    for (int i = 0; i < 6; i++) {
-        f32 l = glm::length(glm::vec3(frustum_planes[i]));
-        frustum_planes[i] /= l;
-    }
-}
-
-void Scene::load_data(VulkanRenderer *renderer, const SceneDefinition &definition)
-{
-    gltfs.clear();
-    root_transforms.clear();
-    for (usize i = 0; i < definition.gltf_paths.size(); i++) {
-        if (auto loaded_gltf = load_gltf(renderer, definition.gltf_paths[i])) {
-            gltfs.push_back(std::move(loaded_gltf));
-            root_transforms.push_back(
-                i < definition.root_transforms.size() ? definition.root_transforms[i] : glm::mat4(1.0f));
-        }
-    }
 }
 
 void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
@@ -131,7 +97,7 @@ void VulkanRenderer::cleanup()
 }
 
 void VulkanRenderer::draw(
-    const RenderScene &scene, Camera &main_camera, EngineStats &stats, bool &resize_requested)
+    const RenderScene &scene, Camera &main_camera, RenderStats &stats, bool &resize_requested)
 {
     // Wait until the GPU has finished rendering the last frame.
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame().render_fence, true, 1000000000));
@@ -459,11 +425,15 @@ void VulkanRenderer::init_descriptors()
     });
 
     DescriptorLayoutBuilder compute_builder;
-    compute_builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene Object buffer.
-    compute_builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's indirect buffer.
+    compute_builder.add_binding(
+        0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene Object buffer.
+    compute_builder.add_binding(
+        1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's indirect buffer.
     compute_builder.add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render stats buffer.
-    compute_builder.add_binding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene input commands buffer.
-    compute_builder.add_binding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's transparent order buffer.
+    compute_builder.add_binding(
+        3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene input commands buffer.
+    compute_builder.add_binding(
+        4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's transparent order buffer.
     _compute_descriptor_layout = compute_builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -482,9 +452,7 @@ void VulkanRenderer::init_pipelines()
 
     _material_system.register_type<GLTFMetallic_Roughness>();
     _material_system.build_pipelines(this);
-    _main_deletion_queue.push_function([this]() {
-        _material_system.clear_resources(_device);
-    });
+    _main_deletion_queue.push_function([this]() { _material_system.clear_resources(_device); });
 }
 
 void VulkanRenderer::init_background_pipelines()
@@ -740,15 +708,8 @@ void VulkanRenderer::init_object_buffers()
     }
 }
 
-RenderScene VulkanRenderer::init_render_scene(Scene &scene)
+RenderScene VulkanRenderer::init_render_scene(DrawContext &ctx)
 {
-    RenderScene render_scene;
-
-    DrawContext ctx;
-    for (usize i = 0; i < scene.gltfs.size(); i++) {
-        scene.gltfs[i]->draw(scene.root_transforms[i], ctx);
-    }
-
     const usize total_surfaces = ctx.opaque_surfaces.size() + ctx.transparent_surfaces.size();
     if (total_surfaces == 0) {
         return {};
@@ -758,13 +719,14 @@ RenderScene VulkanRenderer::init_render_scene(Scene &scene)
         return {};
     }
 
+    RenderScene render_scene;
     render_scene.first_transparent_index = ctx.opaque_surfaces.size();
 
     std::sort(ctx.opaque_surfaces.begin(), ctx.opaque_surfaces.end(),
-    [](const RenderObject &a, const RenderObject &b) {
-        return std::tuple(a.material->pipeline, a.material->material_set, a.index_buffer) <
-               std::tuple(b.material->pipeline, b.material->material_set, b.index_buffer);
-    });
+        [](const RenderObject &a, const RenderObject &b) {
+            return std::tuple(a.material->pipeline, a.material->material_set, a.index_buffer) <
+                   std::tuple(b.material->pipeline, b.material->material_set, b.index_buffer);
+        });
 
     std::vector<VkDrawIndexedIndirectCommand> input_commands;
     input_commands.reserve(total_surfaces);
@@ -772,37 +734,29 @@ RenderScene VulkanRenderer::init_render_scene(Scene &scene)
     gpu_object_data.reserve(total_surfaces);
 
     for (auto &obj : ctx.opaque_surfaces) {
-        input_commands.push_back({
-            .indexCount = obj.index_count,
+        input_commands.push_back({ .indexCount = obj.index_count,
             .instanceCount = 1,
             .firstIndex = obj.first_index,
             .vertexOffset = 0,
-            .firstInstance = static_cast<u32>(gpu_object_data.size())
-        });
+            .firstInstance = static_cast<u32>(gpu_object_data.size()) });
 
-        gpu_object_data.push_back({
-            .world_matrix = obj.transform,
+        gpu_object_data.push_back({ .world_matrix = obj.transform,
             .sphere_bounds = glm::vec4(obj.bounds.origin, obj.bounds.sphere_radius),
-            .vertex_buffer = obj.vertex_buffer_address
-        });
+            .vertex_buffer = obj.vertex_buffer_address });
 
         render_scene.index_buffers.push_back(obj.index_buffer);
-        render_scene.materials.push_back(obj.material); 
+        render_scene.materials.push_back(obj.material);
     }
     for (auto &obj : ctx.transparent_surfaces) {
-        input_commands.push_back({
-            .indexCount = obj.index_count,
+        input_commands.push_back({ .indexCount = obj.index_count,
             .instanceCount = 1,
             .firstIndex = obj.first_index,
             .vertexOffset = 0,
-            .firstInstance = static_cast<u32>(gpu_object_data.size())
-        });
+            .firstInstance = static_cast<u32>(gpu_object_data.size()) });
 
-        gpu_object_data.push_back({
-            .world_matrix = obj.transform,
+        gpu_object_data.push_back({ .world_matrix = obj.transform,
             .sphere_bounds = glm::vec4(obj.bounds.origin, obj.bounds.sphere_radius),
-            .vertex_buffer = obj.vertex_buffer_address
-        });
+            .vertex_buffer = obj.vertex_buffer_address });
 
         render_scene.index_buffers.push_back(obj.index_buffer);
         render_scene.materials.push_back(obj.material);
@@ -814,11 +768,10 @@ RenderScene VulkanRenderer::init_render_scene(Scene &scene)
         render_scene.total_triangle_count += command.indexCount / 3;
     }
 
-    render_scene.object_buffer = upload_to_device_local(
-        gpu_object_data.data(), gpu_object_data.size() * sizeof(GPUObjectData),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    render_scene.input_command_buffer = upload_to_device_local(
-        input_commands.data(), input_commands.size() * sizeof(VkDrawIndexedIndirectCommand),
+    render_scene.object_buffer = upload_to_device_local(gpu_object_data.data(),
+        gpu_object_data.size() * sizeof(GPUObjectData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    render_scene.input_command_buffer = upload_to_device_local(input_commands.data(),
+        input_commands.size() * sizeof(VkDrawIndexedIndirectCommand),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     OH_LOG_DEBUG("Opaque count: {}", ctx.opaque_surfaces.size());
@@ -913,7 +866,7 @@ void VulkanRenderer::draw_background(VkCommandBuffer cmd)
 }
 
 void VulkanRenderer::draw_geometry(
-    VkCommandBuffer cmd, const RenderScene &scene, Camera &main_camera, EngineStats &stats)
+    VkCommandBuffer cmd, const RenderScene &scene, Camera &main_camera, RenderStats &stats)
 {
     stats.reset_counters();
     stats.total_triangle_count = scene.total_triangle_count;
@@ -922,15 +875,15 @@ void VulkanRenderer::draw_geometry(
     stats.visible_triangle_count = gpu_stats_ptr->visible_triangles;
     memset(gpu_stats_ptr, 0, sizeof(GPURenderStats));
 
-    if (scene.total_triangle_count == 0)
-    {
+    if (scene.total_triangle_count == 0) {
         return;
     }
 
     auto start_time = std::chrono::system_clock::now();
 
     // Sort the transparent objects by distance from the camera before rendering them.
-    std::iota(transparent_render_order.begin(), transparent_render_order.end(), scene.first_transparent_index);
+    std::iota(transparent_render_order.begin(), transparent_render_order.end(),
+        scene.first_transparent_index);
     for (usize i = 0; i < scene.transparent_centers.size(); ++i) {
         glm::vec3 offset = main_camera.position - scene.transparent_centers[i];
         center_distances_sq[i] = glm::dot(offset, offset);
@@ -941,8 +894,8 @@ void VulkanRenderer::draw_geometry(
             f32 dist_b = distances_sq[b - scene.first_transparent_index];
             return dist_a > dist_b; // Sort from farthest to nearest
         });
-    memcpy(get_current_frame().transparent_order_buffer.info.pMappedData, transparent_render_order.data(),
-        transparent_render_order.size() * sizeof(u32));
+    memcpy(get_current_frame().transparent_order_buffer.info.pMappedData,
+        transparent_render_order.data(), transparent_render_order.size() * sizeof(u32));
 
     AllocatedBuffer gpu_scene_data_buffer = create_buffer(
         sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -960,21 +913,21 @@ void VulkanRenderer::draw_geometry(
         DescriptorWriter writer;
         writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        writer.write_buffer(1, scene.object_buffer.buffer,
-            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.write_buffer(
+            1, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.update_set(_device, global_descriptor);
     }
 
     {
         DescriptorWriter compute_writer;
-        compute_writer.write_buffer(0, scene.object_buffer.buffer,
-            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(1, get_current_frame().indirect_buffer.buffer,
-            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        compute_writer.write_buffer(
+            0, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        compute_writer.write_buffer(1, get_current_frame().indirect_buffer.buffer, VK_WHOLE_SIZE, 0,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(2, get_current_frame().render_stats_buffer.buffer,
             sizeof(GPURenderStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(3, scene.input_command_buffer.buffer,
-            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        compute_writer.write_buffer(3, scene.input_command_buffer.buffer, VK_WHOLE_SIZE, 0,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         compute_writer.write_buffer(4, get_current_frame().transparent_order_buffer.buffer,
             VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
@@ -985,7 +938,6 @@ void VulkanRenderer::draw_geometry(
         _draw_image.image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo depth_attachment = vkinit::depth_attachment_info(
         _depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline_layout, 0, 1,
@@ -1072,9 +1024,8 @@ void VulkanRenderer::draw_geometry(
     };
 
     for (u32 d = 0; d < total_draws; d++) {
-        const u32 slot = d < first_transparent
-            ? d
-            : transparent_render_order[d - first_transparent];
+        const u32 slot =
+            d < first_transparent ? d : transparent_render_order[d - first_transparent];
         MaterialInstance *material = scene.materials[slot];
         VkBuffer index_buffer = scene.index_buffers[slot];
 
@@ -1097,7 +1048,7 @@ void VulkanRenderer::draw_geometry(
 }
 
 void VulkanRenderer::draw_imgui(
-    VkCommandBuffer cmd, VkImageView target_image_view, EngineStats &stats)
+    VkCommandBuffer cmd, VkImageView target_image_view, RenderStats &stats)
 {
     VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
         target_image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -1281,14 +1232,12 @@ void VulkanRenderer::destroy_image(const AllocatedImage &img)
 AllocatedBuffer VulkanRenderer::upload_to_device_local(
     const void *data, usize size, VkBufferUsageFlags usage)
 {
-    AllocatedBuffer staging_buffer = create_buffer(size,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VMA_MEMORY_USAGE_CPU_ONLY);
+    AllocatedBuffer staging_buffer =
+        create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
     memcpy(staging_buffer.info.pMappedData, data, size);
 
-    AllocatedBuffer device_local_buffer = create_buffer(size,
-        usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
+    AllocatedBuffer device_local_buffer =
+        create_buffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
     immediate_submit([&](VkCommandBuffer cmd) {
         VkBufferCopy copy { .srcOffset = 0, .dstOffset = 0, .size = size };

@@ -1,86 +1,19 @@
 #pragma once
 
-#include <SDL_events.h>
+#include "vk_descriptors.hpp"
+#include "vk_frame.hpp"
+#include "vk_gpu_data.hpp"
+#include "vk_material_system.hpp"
+#include "vk_render_scene.hpp"
+#include "vk_types.hpp"
 #include <camera/camera.hpp>
 #include <core/types.hpp>
-#include <deque>
 #include <functional>
 #include <span>
 #include <vector>
-#include <vk_descriptors.hpp>
-#include <vk_material_system.hpp>
-#include <vk_types.hpp>
 #include <vulkan/vulkan_core.h>
-#include <filesystem>
-#include <memory>
-#include <string>
 
 struct SDL_Window;
-class VulkanRenderer;
-struct LoadedGLTF;
-
-struct DeletionQueue
-{
-    std::deque<std::function<void()>> deletors;
-
-    void push_function(std::function<void()> &&function) { deletors.push_back(function); }
-
-    void flush()
-    {
-        for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
-            (*it)();
-        }
-
-        deletors.clear();
-    }
-};
-
-struct FrameData
-{
-    VkCommandPool command_pool;
-    VkCommandBuffer main_command_buffer;
-
-    VkSemaphore swapchain_semaphore;
-    VkFence render_fence;
-
-    DeletionQueue deletion_queue;
-
-    DescriptorAllocatorGrowable frame_descriptors;
-
-    AllocatedBuffer indirect_buffer;
-    AllocatedBuffer render_stats_buffer;
-
-    /**
-     * Buffer storing the order of transparent objects for correct rendering.
-     */
-    AllocatedBuffer transparent_order_buffer;
-
-    VkDescriptorSet compute_descriptor;
-};
-
-struct CullPushConstants
-{
-    glm::vec4 frustum_planes[6];
-    u32 object_count;
-    u32 cull_enabled;
-    u32 first_transparent_index;
-
-    /**
-     * Extract frustum planes from the view-projection matrix and store them into
-     * `.frustum_planes`.
-     *
-     * Frustum planes are stored in the following order:
-     *     - `0`: Left plane
-     *     - `1`: Right plane
-     *     - `2`: Bottom plane
-     *     - `3`: Top plane
-     *     - `4`: Near plane
-     *     - `5`: Far plane
-     *
-     * @param vp View-projection matrix.
-     */
-    void extract_frustum_planes(const glm::mat4 &vp);
-};
 
 struct ComputePushConstants
 {
@@ -98,132 +31,15 @@ struct ComputeEffect
     ComputePushConstants data;
 };
 
-struct GPUSceneData
+struct RenderStats
 {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 viewproj;
-    glm::vec4 ambient_color;
-    /* `sunlight_direction`:
-     *	- `.xyz`: Direction
-     *  - `.w`: Sun power
-     */
-    glm::vec4 sunlight_direction;
-    glm::vec4 sunlight_color;
-    glm::vec4 camera_position;
-};
-
-struct RenderObject
-{
-    u32 index_count;
-    u32 first_index;
-    VkBuffer index_buffer;
-
-    MaterialInstance *material;
-    Bounds bounds;
-    glm::mat4 transform;
-    VkDeviceAddress vertex_buffer_address;
-};
-
-/**
- * Persistent result of building a scene. Built once when the scene loads; per frame only the
- * camera-dependent work (culling, transparent sort) touches it.
- *
- * Slots: every surface gets a slot number at build time. Slot `i` is the object's permanent
- * identity. All per-draw arrays below are indexed by slot, and the object buffer is never
- * reordered. Draw order is changed by reordering the indirect commands instead, which point back to
- * a slot through `firstInstance`.
- *
- * Slot layout: [0, first_transparent_index) is opaque, sorted once by (material, index buffer).
- * [first_transparent_index, end) is transparent, re-sorted by camera distance every frame.
- *
- * Does not own the meshes, textures or materials the pointers refer to. Those live in the
- * `LoadedGLTF`s in `Scene`, which must outlive this.
- */
-struct RenderScene
-{
-    /**
-     * Device-local array of `GPUObjectData` (world matrix, bounding sphere, vertex buffer address),
-     * one per slot. Uploaded once at load, read-only on the GPU afterwards.
-     */
-    AllocatedBuffer object_buffer;
-
-    /** Index buffer of the draw at each slot. Read by draw recording for vkCmdBindIndexBuffer. */
-    std::vector<VkBuffer> index_buffers;
-    // TODO: We should consider storing indices here instead for better control and potential memory savings.
-    /** Material of the draw at each slot. Read by draw recording to decide when to rebind. */
-    std::vector<MaterialInstance *> materials;
-    /** First transparent slot. Equals the opaque draw count. */
-    u32 first_transparent_index = 0;
-
-    /**
-     * World-space center of each transparent object (indexed by `slot - first_transparent_index`).
-     * Computed once at load. The per-frame transparent sort uses it to get the camera distance.
-     */
-    std::vector<glm::vec3> transparent_centers;
-
-    /**
-     * Triangles in the whole scene, every draw counted once whether visible or not. Computed once
-     * at load, since it never changes. Reported as the "total triangles" stat.
-     */
-    u32 total_triangle_count = 0;
-
-    /**
-     * Device-local `VkDrawIndexedIndirectCommand` per slot, uploaded once. Read-only input 
-     * to the shader, which copies the visible ones into the current frame's output buffer.
-     */
-    AllocatedBuffer input_command_buffer;
-};
-
-struct DrawContext
-{
-    std::vector<RenderObject> opaque_surfaces;
-    std::vector<RenderObject> transparent_surfaces;
-};
-
-struct EngineStats
-{
-    f32 frametime;
     int visible_triangle_count;
     int total_triangle_count;
     int drawcall_count;
-    f32 scene_update_time;
     f32 mesh_draw_time;
 
     void reset_counters();
 };
-
-/**
- * What a scene is made of. Plain data with no GPU resources, so it is cheap to copy and to keep a
- * list of.
- */
-struct SceneDefinition
-{
-    std::string name;
-    std::vector<std::filesystem::path> gltf_paths;
-    /** One per glTF, in the same order as `gltf_paths`. Missing entries mean identity. */
-    std::vector<glm::mat4> root_transforms;
-};
-
-/**
- * A loaded `SceneDefinition`. Owns the glTFs (and through them the meshes, textures and materials)
- * that a `RenderScene` points into, so it must outlive the `RenderScene` built from it.
- */
-struct Scene
-{
-    std::vector<std::unique_ptr<LoadedGLTF>> gltfs;
-    /** Parallel to `gltfs`. */
-    std::vector<glm::mat4> root_transforms;
-
-    /** Replaces the loaded glTFs with the ones in `definition`. glTFs that fail to load are skipped. */
-    void load_data(VulkanRenderer *renderer, const SceneDefinition &definition);
-};
-
-/**
- * The count of frames in flight.
- * Determines how many command lists the CPU can prepare ahead of time.
- */
-constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanRenderer
 {
@@ -305,15 +121,15 @@ public:
 
     void init(SDL_Window *window, u32 width, u32 height);
 
-    RenderScene init_render_scene(Scene &scene);
+    RenderScene init_render_scene(DrawContext &ctx);
 
     /** Frees the scene's GPU buffers. The GPU must be idle. Safe to call on an empty scene. */
     void destroy_render_scene(RenderScene &scene);
 
     void cleanup();
 
-    void draw(const RenderScene &scene, Camera &main_camera, EngineStats &stats,
-        bool &resize_requested);
+    void draw(
+        const RenderScene &scene, Camera &main_camera, RenderStats &stats, bool &resize_requested);
 
     void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
 
@@ -361,13 +177,12 @@ private:
 
     void destroy_swapchain();
 
-    AllocatedBuffer upload_to_device_local(
-        const void *data, usize size, VkBufferUsageFlags usage);
+    AllocatedBuffer upload_to_device_local(const void *data, usize size, VkBufferUsageFlags usage);
 
     void draw_background(VkCommandBuffer cmd);
 
-    void draw_geometry(VkCommandBuffer cmd, const RenderScene &scene, Camera &main_camera,
-        EngineStats &stats);
+    void draw_geometry(
+        VkCommandBuffer cmd, const RenderScene &scene, Camera &main_camera, RenderStats &stats);
 
-    void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view, EngineStats &stats);
+    void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view, RenderStats &stats);
 };
