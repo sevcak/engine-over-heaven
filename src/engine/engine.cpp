@@ -65,7 +65,7 @@ void Engine::cleanup()
 
         // The scene's buffers and the glTFs free their GPU resources, so they must go before the
         // renderer.
-        renderer.destroy_render_scene(render_scene);
+        destroy_render_scene(renderer._gpu, render_scene);
         current_scene.gltfs.clear();
 
         renderer.cleanup();
@@ -222,14 +222,15 @@ void Engine::load_scene(int index)
     // The GPU may still be using the old scene's buffers and textures.
     vkDeviceWaitIdle(renderer._gpu.device);
 
-    renderer.destroy_render_scene(render_scene);
+    destroy_render_scene(renderer._gpu, render_scene);
     current_scene.gltfs.clear();
 
-    current_scene.load_data(&renderer, scene_definitions[index]);
+    current_scene.load_data(renderer._gpu, renderer._default_resources, renderer._material_system,
+        scene_definitions[index]);
 
     DrawContext surfaces;
     current_scene.collect_surfaces(surfaces);
-    render_scene = renderer.init_render_scene(surfaces);
+    render_scene = build_render_scene(renderer._gpu, surfaces);
 
     current_scene_index = index;
 }

@@ -1,4 +1,5 @@
 #include "vk_material_system.hpp"
+#include "vk_context.hpp"
 #include "vk_initializers.hpp"
 #include "vk_pipelines.hpp"
 #include <vulkan/vulkan.h>

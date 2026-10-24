@@ -3,7 +3,6 @@
 #include "vk_descriptors.hpp"
 #include "vk_material_system.hpp"
 #include "vk_types.hpp"
-#include <fastgltf/types.hpp>
 #include <filesystem>
 #include <unordered_map>
 
@@ -54,8 +53,9 @@ struct MeshNode : public Node
     virtual void draw(const glm::mat4 &top_matrix, DrawContext &ctx) override;
 };
 
-class VulkanRenderer;
+struct DefaultResources;
 struct DrawContext;
+struct GpuContext;
 
 struct LoadedGLTF : public IRenderable
 {
@@ -72,8 +72,8 @@ struct LoadedGLTF : public IRenderable
 
     AllocatedBuffer material_data_buffer;
 
-    // TODO: This should be replaced with a proper resource management system.
-    VulkanRenderer *creator;
+    /** Context the GPU resources were created with, used to destroy them. Must outlive this. */
+    const GpuContext *gpu;
 
     LoadedGLTF() = default;
     LoadedGLTF(const LoadedGLTF &) = delete;
@@ -87,4 +87,14 @@ private:
     void clear_all();
 };
 
-std::unique_ptr<LoadedGLTF> load_gltf(VulkanRenderer *renderer, std::filesystem::path file_path);
+/**
+ * @brief Load a glTF or GLB file and upload its meshes, textures and materials to the GPU.
+ *
+ * @param gpu The GPU context to create the resources with. Must outlive the result.
+ * @param defaults Fallback textures and samplers for anything the file doesn't provide.
+ * @param material_system Material system to build the file's materials with.
+ * @param file_path Path to the `.gltf` or `.glb` file.
+ * @return The loaded file, or `nullptr` if it couldn't be parsed.
+ */
+std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResources &defaults,
+    MaterialSystem &material_system, std::filesystem::path file_path);

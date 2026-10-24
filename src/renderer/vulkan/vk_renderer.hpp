@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vk_context.hpp"
+#include "vk_default_resources.hpp"
 #include "vk_descriptors.hpp"
 #include "vk_frame.hpp"
 #include "vk_gpu_data.hpp"
@@ -9,8 +10,6 @@
 #include "vk_types.hpp"
 #include <camera/camera.hpp>
 #include <core/types.hpp>
-#include <functional>
-#include <span>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
@@ -92,38 +91,18 @@ public:
     std::vector<ComputeEffect> _background_effects;
     int _current_background_effect { 0 };
 
-    AllocatedImage _white_image;
-    AllocatedImage _black_image;
-    AllocatedImage _grey_image;
-    AllocatedImage _error_checkerboard_image;
-
-    VkSampler _default_sampler_linear;
-    VkSampler _default_sampler_nearest;
-
-    MaterialInstance _default_data;
     MaterialSystem _material_system;
-
-    /* Static render scene data. */
-    std::vector<u32> transparent_render_order;
-    std::vector<f32> center_distances_sq;
+    DefaultResources _default_resources;
 
     void init(SDL_Window *window, u32 width, u32 height);
 
-    RenderScene init_render_scene(DrawContext &ctx);
-
-    /** Frees the scene's GPU buffers. The GPU must be idle. Safe to call on an empty scene. */
-    void destroy_render_scene(RenderScene &scene);
-
     void cleanup();
 
-    void draw(
-        const RenderScene &scene, Camera &main_camera, RenderStats &stats, bool &resize_requested);
+    void draw(RenderScene &scene, Camera &main_camera, RenderStats &stats, bool &resize_requested);
 
     void resize_swapchain(u32 width, u32 height);
 
 private:
-    constexpr static usize MAX_OBJECTS = 100000;
-
     void init_swapchain(u32 width, u32 height);
 
     void init_commands();
@@ -140,8 +119,6 @@ private:
 
     void init_imgui();
 
-    void init_default_data();
-
     void init_object_buffers();
 
     void create_swapchain(u32 width, u32 height);
@@ -151,7 +128,7 @@ private:
     void draw_background(VkCommandBuffer cmd);
 
     void draw_geometry(
-        VkCommandBuffer cmd, const RenderScene &scene, Camera &main_camera, RenderStats &stats);
+        VkCommandBuffer cmd, RenderScene &scene, Camera &main_camera, RenderStats &stats);
 
     void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view, RenderStats &stats);
 };

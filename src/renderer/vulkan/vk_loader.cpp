@@ -1,6 +1,8 @@
 #include "vk_loader.hpp"
 
-#include "vk_renderer.hpp"
+#include "vk_context.hpp"
+#include "vk_default_resources.hpp"
+#include "vk_render_scene.hpp"
 #include "vk_types.hpp"
 
 #include <fastgltf/types.hpp>
@@ -13,8 +15,8 @@
 #include <glm/gtx/quaternion.hpp>
 #include <logger/logger.hpp>
 
-std::optional<AllocatedImage> load_image(
-    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image, std::filesystem::path gltf_path);
+std::optional<AllocatedImage> load_image(const GpuContext &gpu, fastgltf::Asset &asset,
+    fastgltf::Image &image, std::filesystem::path gltf_path);
 
 VkFilter extract_filter(fastgltf::Filter filter)
 {
@@ -46,13 +48,13 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter)
     }
 }
 
-std::unique_ptr<LoadedGLTF> load_gltf(
-    VulkanRenderer *engine, std::filesystem::path path)
+std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResources &defaults,
+    MaterialSystem &material_system, std::filesystem::path path)
 {
     OH_LOG_INFO("Loading GLTF: {}", path.c_str());
 
     std::unique_ptr<LoadedGLTF> scene = std::make_unique<LoadedGLTF>();
-    scene->creator = engine;
+    scene->gpu = &gpu;
     LoadedGLTF &file = *scene.get();
 
     fastgltf::Parser parser {};
@@ -100,7 +102,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
     };
 
-    file.descriptor_pool.init(engine->_gpu.device, gltf.materials.size(), sizes);
+    file.descriptor_pool.init(gpu.device, gltf.materials.size(), sizes);
 
     // Load samplers.
     for (fastgltf::Sampler &sampler : gltf.samplers) {
@@ -116,7 +118,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 
         VkSampler new_sampler;
-        vkCreateSampler(engine->_gpu.device, &sampl, nullptr, &new_sampler);
+        vkCreateSampler(gpu.device, &sampl, nullptr, &new_sampler);
 
         file.samplers.push_back(new_sampler);
     }
@@ -128,19 +130,19 @@ std::unique_ptr<LoadedGLTF> load_gltf(
 
     // Load all textures.
     for (fastgltf::Image &image : gltf.images) {
-        std::optional<AllocatedImage> img = load_image(engine, gltf, image, path);
+        std::optional<AllocatedImage> img = load_image(gpu, gltf, image, path);
 
         if (img.has_value()) {
             images.push_back(*img);
             file.images[image.name.c_str()] = *img;
         } else {
             OH_LOG_ERROR("Failed to load texture {}.", image.name);
-            images.push_back(engine->_error_checkerboard_image);
+            images.push_back(defaults.error_checkerboard_image);
         }
     }
 
     // Create a buffer to hold the material data.
-    file.material_data_buffer = engine->_gpu.create_buffer(
+    file.material_data_buffer = gpu.create_buffer(
         sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     GLTFMetallic_Roughness::MaterialConstants *scene_material_constants =
@@ -172,10 +174,10 @@ std::unique_ptr<LoadedGLTF> load_gltf(
 
         GLTFMetallic_Roughness::MaterialResources material_resources;
         // Default the material textures.
-        material_resources.color_image = engine->_white_image;
-        material_resources.color_sampler = engine->_default_sampler_linear;
-        material_resources.metal_rough_image = engine->_white_image;
-        material_resources.metal_rough_sampler = engine->_default_sampler_linear;
+        material_resources.color_image = defaults.white_image;
+        material_resources.color_sampler = defaults.sampler_linear;
+        material_resources.metal_rough_image = defaults.white_image;
+        material_resources.metal_rough_sampler = defaults.sampler_linear;
 
         material_resources.data_buffer = file.material_data_buffer.buffer;
         material_resources.data_buffer_offset =
@@ -204,8 +206,8 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             }
         }
         // Build the material.
-        new_mat->data = engine->_material_system.get_type<GLTFMetallic_Roughness>().write_material(
-            engine->_gpu.device, pass_type, material_resources, file.descriptor_pool);
+        new_mat->data = material_system.get_type<GLTFMetallic_Roughness>().write_material(
+            gpu.device, pass_type, material_resources, file.descriptor_pool);
 
         data_index++;
     }
@@ -307,7 +309,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             new_mesh->surfaces.push_back(new_surface);
         }
 
-        new_mesh->mesh_buffers = engine->_gpu.upload_mesh(indices, vertices);
+        new_mesh->mesh_buffers = gpu.upload_mesh(indices, vertices);
     }
 
     // Load all nodes and their meshes.
@@ -376,22 +378,18 @@ void LoadedGLTF::draw(const glm::mat4 &top_matrix, DrawContext &ctx)
 
 void LoadedGLTF::clear_all()
 {
-    VkDevice dev = creator->_gpu.device;
+    VkDevice dev = gpu->device;
 
     descriptor_pool.destroy_pools(dev);
-    creator->_gpu.destroy_buffer(material_data_buffer);
+    gpu->destroy_buffer(material_data_buffer);
 
     for (auto &[k, mesh] : meshes) {
-        creator->_gpu.destroy_buffer(mesh->mesh_buffers.index_buffer);
-        creator->_gpu.destroy_buffer(mesh->mesh_buffers.vertex_buffer);
+        gpu->destroy_buffer(mesh->mesh_buffers.index_buffer);
+        gpu->destroy_buffer(mesh->mesh_buffers.vertex_buffer);
     }
 
     for (auto &[k, image] : images) {
-        if (image.image == creator->_error_checkerboard_image.image) {
-            // Don't destroy the default images.
-            continue;
-        }
-        creator->_gpu.destroy_image(image);
+        gpu->destroy_image(image);
     }
 
     for (auto &sampler : samplers) {
@@ -399,8 +397,8 @@ void LoadedGLTF::clear_all()
     }
 }
 
-std::optional<AllocatedImage> load_image(
-    VulkanRenderer *engine, fastgltf::Asset &asset, fastgltf::Image &image, std::filesystem::path gltf_path)
+std::optional<AllocatedImage> load_image(const GpuContext &gpu, fastgltf::Asset &asset,
+    fastgltf::Image &image, std::filesystem::path gltf_path)
 {
     AllocatedImage new_image {};
 
@@ -420,7 +418,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.height = (u32)height;
                     image_size.depth = 1;
 
-                    new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                    new_image = gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                         VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
@@ -436,7 +434,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.height = static_cast<u32>(height);
                     image_size.depth = 1;
 
-                    new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                    new_image = gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                         VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
@@ -470,7 +468,7 @@ std::optional<AllocatedImage> load_image(
                     if (data) {
                         VkExtent3D image_size = { static_cast<u32>(width),
                             static_cast<u32>(height), 1 };
-                        new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                        new_image = gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                             VK_IMAGE_USAGE_SAMPLED_BIT, true);
                         stbi_image_free(data);
                     }

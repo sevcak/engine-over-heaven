@@ -14,7 +14,9 @@
 #include "vk_loader.hpp"
 #include "vk_render_scene.hpp"
 
-class VulkanRenderer;
+struct DefaultResources;
+struct GpuContext;
+class MaterialSystem;
 
 /**
  * What a scene is made of. Plain data with no GPU resources, so it is cheap to copy and to keep a
@@ -38,9 +40,17 @@ struct Scene
     /** Parallel to `gltfs`. */
     std::vector<glm::mat4> root_transforms;
 
-    /** Replaces the loaded glTFs with the ones in `definition`. glTFs that fail to load are
-     * skipped. */
-    void load_data(VulkanRenderer *renderer, const SceneDefinition &definition);
+    /**
+     * @brief Replace the loaded glTFs with the ones in `definition`. glTFs that fail to load are
+     * skipped.
+     *
+     * @param gpu The GPU context to create the resources with. Must outlive this scene's glTFs.
+     * @param defaults Fallback textures and samplers for anything a file doesn't provide.
+     * @param material_system Material system to build the materials with.
+     * @param definition The files and root transforms to load.
+     */
+    void load_data(const GpuContext &gpu, const DefaultResources &defaults,
+        MaterialSystem &material_system, const SceneDefinition &definition);
 
     /** Flattens every glTF's node hierarchy into `draw_ctx`, applying the root transforms. */
     void collect_surfaces(DrawContext &draw_ctx);

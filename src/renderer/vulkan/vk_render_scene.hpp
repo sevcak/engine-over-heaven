@@ -9,6 +9,11 @@
 #include "vk_material_system.hpp"
 #include "vk_types.hpp"
 
+struct GpuContext;
+
+/** Most draws a `RenderScene` can hold. Also sizes the renderer's per-frame draw buffers. */
+constexpr usize MAX_OBJECTS = 100000;
+
 /**
  * Persistent result of building a scene. Built once when the scene loads; per frame only the
  * camera-dependent work (culling, transparent sort) touches it.
@@ -58,6 +63,13 @@ struct RenderScene
      * to the shader, which copies the visible ones into the current frame's output buffer.
      */
     AllocatedBuffer input_command_buffer;
+
+    /** Transparent slots in back-to-front draw order, rebuilt every frame by the camera-distance
+     * sort. */
+    std::vector<u32> transparent_render_order;
+    /** Squared distances from the camera to each transparent object's center. Indexed by `slot -
+     * first_transparent_index`. */
+    std::vector<f32> center_distances_sq;
 };
 
 struct RenderObject
@@ -77,3 +89,24 @@ struct DrawContext
     std::vector<RenderObject> opaque_surfaces;
     std::vector<RenderObject> transparent_surfaces;
 };
+
+/**
+ * @brief Build the GPU-side layout of a scene: assign slots, sort the opaque draws by material and
+ * index buffer, and upload the object and indirect command buffers. Blocks until the upload is
+ * done.
+ *
+ * @param gpu The GPU context to create the buffers with.
+ * @param ctx Surfaces to build from. The opaque list is sorted in place.
+ * @return The built scene, or an empty one if there are no surfaces or more than `MAX_OBJECTS`.
+ */
+RenderScene build_render_scene(const GpuContext &gpu, DrawContext &ctx);
+
+/**
+ * @brief Free the scene's GPU buffers and reset it to empty. Safe to call on an empty scene.
+ *
+ * The GPU must be idle.
+ *
+ * @param gpu The GPU context the scene was built with.
+ * @param scene The scene to destroy.
+ */
+void destroy_render_scene(const GpuContext &gpu, RenderScene &scene);

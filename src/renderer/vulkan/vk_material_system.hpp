@@ -9,8 +9,9 @@
 #include <core/types.hpp>
 #include <logger/logger.hpp>
 
-#include <vk_context.hpp>
 #include <vulkan/vulkan.h>
+
+struct GpuContext;
 
 enum MaterialPass : u8
 {

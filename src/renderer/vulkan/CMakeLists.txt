@@ -16,10 +16,13 @@ add_library(vulkan_renderer STATIC
     vk_loader.hpp
     vk_material_system.cpp
     vk_material_system.hpp
+    vk_render_scene.cpp
     vk_render_scene.hpp
     vk_types.hpp
     vk_context.hpp
     vk_context.cpp
+    vk_default_resources.cpp
+    vk_default_resources.hpp
 )
 
 set_property(TARGET vulkan_renderer PROPERTY CXX_STANDARD 20)

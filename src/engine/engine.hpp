@@ -1,13 +1,9 @@
 #pragma once
 
-#include "vk_loader.hpp"
 #include "vk_renderer.hpp"
 #include <camera/camera.hpp>
 #include <camera/fly_camera_controller.hpp>
-#include <memory>
 #include <scene/scene.hpp>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 struct SDL_Window;
