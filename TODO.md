@@ -31,7 +31,7 @@
 
 ## Refactor
 
-- [ ] Extract `GpuContext` and the resource functions
+- [x] Extract `GpuContext` and the resource functions
 - [ ] Extract `DefaultResources`, decouple the loader and the scene builder
 - [ ] Split the renderer into swapchain and passes
 - [ ] Make teardown explicit

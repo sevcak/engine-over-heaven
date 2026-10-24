@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk_context.hpp"
 #include "vk_descriptors.hpp"
 #include "vk_frame.hpp"
 #include "vk_gpu_data.hpp"
@@ -50,11 +51,7 @@ public:
 
     struct SDL_Window *_window { nullptr };
 
-    VkInstance _instance;
-    VkDebugUtilsMessengerEXT _debug_messenger;
-    VkPhysicalDevice _chosen_gpu;
-    VkDevice _device;
-    VkSurfaceKHR _surface;
+    GpuContext _gpu;
 
     VkSwapchainKHR _swapchain;
     VkFormat _swapchain_image_format;
@@ -69,12 +66,7 @@ public:
 
     FrameData &get_current_frame() { return _frames[_frame_number % FRAME_OVERLAP]; }
 
-    VkQueue _graphics_queue;
-    u32 _graphics_queue_family;
-
     DeletionQueue _main_deletion_queue;
-
-    VmaAllocator _allocator;
 
     AllocatedImage _draw_image;
     AllocatedImage _depth_image;
@@ -96,10 +88,6 @@ public:
 
     VkPipelineLayout _cull_pipeline_layout;
     VkPipeline _cull_pipeline;
-
-    VkFence _imm_fence;
-    VkCommandBuffer _imm_cmd_buffer;
-    VkCommandPool _imm_cmd_pool;
 
     std::vector<ComputeEffect> _background_effects;
     int _current_background_effect { 0 };
@@ -131,27 +119,10 @@ public:
     void draw(
         const RenderScene &scene, Camera &main_camera, RenderStats &stats, bool &resize_requested);
 
-    void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
-
-    GPUMeshBuffers upload_mesh(std::span<u32> indices, std::span<Vertex> vertices);
-
-    AllocatedBuffer create_buffer(
-        usize alloc_size, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
-
-    AllocatedImage create_image(
-        VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
-    AllocatedImage create_image(void *data, VkExtent3D size, VkFormat format,
-        VkImageUsageFlags usage, bool mipmapped = false);
-
-    void destroy_buffer(const AllocatedBuffer &buffer);
-    void destroy_image(const AllocatedImage &img);
-
     void resize_swapchain(u32 width, u32 height);
 
 private:
     constexpr static usize MAX_OBJECTS = 100000;
-
-    void init_vulkan();
 
     void init_swapchain(u32 width, u32 height);
 
@@ -176,8 +147,6 @@ private:
     void create_swapchain(u32 width, u32 height);
 
     void destroy_swapchain();
-
-    AllocatedBuffer upload_to_device_local(const void *data, usize size, VkBufferUsageFlags usage);
 
     void draw_background(VkCommandBuffer cmd);
 

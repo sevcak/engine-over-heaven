@@ -61,7 +61,7 @@ void Engine::init()
 void Engine::cleanup()
 {
     if (_is_initialized) {
-        vkDeviceWaitIdle(renderer._device);
+        vkDeviceWaitIdle(renderer._gpu.device);
 
         // The scene's buffers and the glTFs free their GPU resources, so they must go before the
         // renderer.
@@ -220,7 +220,7 @@ void Engine::update_scene()
 void Engine::load_scene(int index)
 {
     // The GPU may still be using the old scene's buffers and textures.
-    vkDeviceWaitIdle(renderer._device);
+    vkDeviceWaitIdle(renderer._gpu.device);
 
     renderer.destroy_render_scene(render_scene);
     current_scene.gltfs.clear();

@@ -1,6 +1,7 @@
 #pragma once
 
 /**
+ * @file
  * The renderer's view of a scene: `DrawContext` is the flat list of surfaces handed to the
  * renderer, and `RenderScene` is the GPU-side layout built from it once at load time.
  */

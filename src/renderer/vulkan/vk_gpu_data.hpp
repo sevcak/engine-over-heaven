@@ -1,6 +1,7 @@
 #pragma once
 
 /**
+ * @file
  * Structs whose memory layout the shaders also define. Keep them in sync with
  * `shaders/gpu_types.glsl`, `shaders/input_structures.glsl` and the buffers in `shaders/cull.comp`.
  */

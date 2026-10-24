@@ -1,6 +1,7 @@
 #pragma once
 
 /**
+ * @file
  * Per-frame-in-flight resources. The renderer owns `FRAME_OVERLAP` of these and cycles through
  * them, so the CPU can record one frame while the GPU is still working on the previous one.
  */

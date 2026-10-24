@@ -1,6 +1,7 @@
 #pragma once
 
 /**
+ * @file
  * Scenes as the engine sees them: which glTF files make up a scene, and the loaded result.
  * Independent of the renderer's GPU layout, which is built from `Scene::collect_surfaces`.
  */

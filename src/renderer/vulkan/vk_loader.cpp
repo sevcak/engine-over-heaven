@@ -100,7 +100,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
     };
 
-    file.descriptor_pool.init(engine->_device, gltf.materials.size(), sizes);
+    file.descriptor_pool.init(engine->_gpu.device, gltf.materials.size(), sizes);
 
     // Load samplers.
     for (fastgltf::Sampler &sampler : gltf.samplers) {
@@ -116,7 +116,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 
         VkSampler new_sampler;
-        vkCreateSampler(engine->_device, &sampl, nullptr, &new_sampler);
+        vkCreateSampler(engine->_gpu.device, &sampl, nullptr, &new_sampler);
 
         file.samplers.push_back(new_sampler);
     }
@@ -140,7 +140,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
     }
 
     // Create a buffer to hold the material data.
-    file.material_data_buffer = engine->create_buffer(
+    file.material_data_buffer = engine->_gpu.create_buffer(
         sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     GLTFMetallic_Roughness::MaterialConstants *scene_material_constants =
@@ -205,7 +205,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
         }
         // Build the material.
         new_mat->data = engine->_material_system.get_type<GLTFMetallic_Roughness>().write_material(
-            engine->_device, pass_type, material_resources, file.descriptor_pool);
+            engine->_gpu.device, pass_type, material_resources, file.descriptor_pool);
 
         data_index++;
     }
@@ -307,7 +307,7 @@ std::unique_ptr<LoadedGLTF> load_gltf(
             new_mesh->surfaces.push_back(new_surface);
         }
 
-        new_mesh->mesh_buffers = engine->upload_mesh(indices, vertices);
+        new_mesh->mesh_buffers = engine->_gpu.upload_mesh(indices, vertices);
     }
 
     // Load all nodes and their meshes.
@@ -376,14 +376,14 @@ void LoadedGLTF::draw(const glm::mat4 &top_matrix, DrawContext &ctx)
 
 void LoadedGLTF::clear_all()
 {
-    VkDevice dev = creator->_device;
+    VkDevice dev = creator->_gpu.device;
 
     descriptor_pool.destroy_pools(dev);
-    creator->destroy_buffer(material_data_buffer);
+    creator->_gpu.destroy_buffer(material_data_buffer);
 
     for (auto &[k, mesh] : meshes) {
-        creator->destroy_buffer(mesh->mesh_buffers.index_buffer);
-        creator->destroy_buffer(mesh->mesh_buffers.vertex_buffer);
+        creator->_gpu.destroy_buffer(mesh->mesh_buffers.index_buffer);
+        creator->_gpu.destroy_buffer(mesh->mesh_buffers.vertex_buffer);
     }
 
     for (auto &[k, image] : images) {
@@ -391,7 +391,7 @@ void LoadedGLTF::clear_all()
             // Don't destroy the default images.
             continue;
         }
-        creator->destroy_image(image);
+        creator->_gpu.destroy_image(image);
     }
 
     for (auto &sampler : samplers) {
@@ -420,7 +420,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.height = (u32)height;
                     image_size.depth = 1;
 
-                    new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                    new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                         VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
@@ -436,7 +436,7 @@ std::optional<AllocatedImage> load_image(
                     image_size.height = static_cast<u32>(height);
                     image_size.depth = 1;
 
-                    new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                    new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                         VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
@@ -470,7 +470,7 @@ std::optional<AllocatedImage> load_image(
                     if (data) {
                         VkExtent3D image_size = { static_cast<u32>(width),
                             static_cast<u32>(height), 1 };
-                        new_image = engine->create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
+                        new_image = engine->_gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                             VK_IMAGE_USAGE_SAMPLED_BIT, true);
                         stbi_image_free(data);
                     }

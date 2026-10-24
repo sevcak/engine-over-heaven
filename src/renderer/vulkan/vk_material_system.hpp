@@ -9,9 +9,8 @@
 #include <core/types.hpp>
 #include <logger/logger.hpp>
 
+#include <vk_context.hpp>
 #include <vulkan/vulkan.h>
-
-class VulkanRenderer;
 
 enum MaterialPass : u8
 {
@@ -34,12 +33,21 @@ struct MaterialInstance
     MaterialPass pass_type;
 };
 
+/** Renderer state that material pipelines are built against. */
+struct MaterialPipelineInputs
+{
+    VkFormat color_format;
+    VkFormat depth_format;
+    /** Layout of descriptor set 0, which holds the per-frame scene data. */
+    VkDescriptorSetLayout scene_data_layout;
+};
+
 class IMaterialType
 {
 public:
     virtual ~IMaterialType() = default;
 
-    virtual void build_pipelines(VulkanRenderer *renderer) = 0;
+    virtual void build_pipelines(const GpuContext &gpu, const MaterialPipelineInputs &inputs) = 0;
 
     virtual void clear_resources(VkDevice device) = 0;
 };
@@ -95,9 +103,10 @@ public:
     /**
      * Build all necessary Vulkan pipelines for the registered material types.
      *
-     * @param renderer The Vulkan renderer instance used to create the pipelines.
+     * @param gpu The GPU context used to create the pipelines.
+     * @param inputs Attachment formats and the scene descriptor set layout to build against.
      */
-    void build_pipelines(VulkanRenderer *renderer);
+    void build_pipelines(const GpuContext &gpu, const MaterialPipelineInputs &inputs);
 };
 
 class GLTFMetallic_Roughness : public IMaterialType
@@ -128,7 +137,7 @@ public:
     MaterialInstance write_material(VkDevice device, MaterialPass pass,
         const MaterialResources &resources, DescriptorAllocatorGrowable &descriptor_allocator);
 
-    void build_pipelines(VulkanRenderer *renderer) override;
+    void build_pipelines(const GpuContext &gpu, const MaterialPipelineInputs &inputs) override;
 
     void clear_resources(VkDevice device) override;
 };

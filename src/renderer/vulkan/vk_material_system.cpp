@@ -1,7 +1,6 @@
 #include "vk_material_system.hpp"
 #include "vk_initializers.hpp"
 #include "vk_pipelines.hpp"
-#include "vk_renderer.hpp"
 #include <vulkan/vulkan.h>
 #include <ranges>
 
@@ -13,24 +12,25 @@ void MaterialSystem::clear_resources(VkDevice device)
     registered_types.clear();
 }
 
-void MaterialSystem::build_pipelines(VulkanRenderer *renderer)
+void MaterialSystem::build_pipelines(const GpuContext &gpu, const MaterialPipelineInputs &inputs)
 {
     for (auto &material_type : registered_types | std::views::values) {
-        material_type->build_pipelines(renderer);
+        material_type->build_pipelines(gpu, inputs);
     }
 }
 
-void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
+void GLTFMetallic_Roughness::build_pipelines(
+    const GpuContext &gpu, const MaterialPipelineInputs &inputs)
 {
     VkShaderModule mesh_frag_shader;
     if (!vkutil::load_shader_module(
-            "../shaders/mesh.frag.spv", renderer->_device, &mesh_frag_shader)) {
+            "../shaders/mesh.frag.spv", gpu.device, &mesh_frag_shader)) {
         OH_LOG_ERROR("Error building the triangle fragment shader module.");
     }
 
     VkShaderModule mesh_vertex_shader;
     if (!vkutil::load_shader_module(
-            "../shaders/mesh.vert.spv", renderer->_device, &mesh_vertex_shader)) {
+            "../shaders/mesh.vert.spv", gpu.device, &mesh_vertex_shader)) {
         OH_LOG_ERROR("Error building the triangle vertex shader module.");
     }
 
@@ -40,9 +40,9 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     layout_builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     material_layout = layout_builder.build(
-        renderer->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+        gpu.device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkDescriptorSetLayout layouts[] = { renderer->_gpu_scene_data_descriptor_layout,
+    VkDescriptorSetLayout layouts[] = { inputs.scene_data_layout,
         material_layout };
 
     VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
@@ -50,7 +50,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     mesh_layout_info.pSetLayouts = layouts;
 
     VkPipelineLayout new_layout;
-    VK_CHECK(vkCreatePipelineLayout(renderer->_device, &mesh_layout_info, nullptr, &new_layout));
+    VK_CHECK(vkCreatePipelineLayout(gpu.device, &mesh_layout_info, nullptr, &new_layout));
 
     auto &opaque_pipeline = pipelines[MaterialPass::Opaque];
     auto &transparent_pipeline = pipelines[MaterialPass::Transparent];
@@ -66,19 +66,19 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanRenderer *renderer)
     pipeline_builder.set_multisampling_none();
     pipeline_builder.disable_blending();
     pipeline_builder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-    pipeline_builder.set_color_attachment_format(renderer->_draw_image.image_format);
-    pipeline_builder.set_depth_format(renderer->_depth_image.image_format);
+    pipeline_builder.set_color_attachment_format(inputs.color_format);
+    pipeline_builder.set_depth_format(inputs.depth_format);
     pipeline_builder._pipeline_layout = new_layout;
 
-    opaque_pipeline.pipeline = pipeline_builder.build_pipeline(renderer->_device);
+    opaque_pipeline.pipeline = pipeline_builder.build_pipeline(gpu.device);
 
     pipeline_builder.enable_blending_additive();
     pipeline_builder.enable_depth_test(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
 
-    transparent_pipeline.pipeline = pipeline_builder.build_pipeline(renderer->_device);
+    transparent_pipeline.pipeline = pipeline_builder.build_pipeline(gpu.device);
 
-    vkDestroyShaderModule(renderer->_device, mesh_frag_shader, nullptr);
-    vkDestroyShaderModule(renderer->_device, mesh_vertex_shader, nullptr); 
+    vkDestroyShaderModule(gpu.device, mesh_frag_shader, nullptr);
+    vkDestroyShaderModule(gpu.device, mesh_vertex_shader, nullptr); 
 }
 
 MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass,
