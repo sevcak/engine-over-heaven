@@ -3,3 +3,4 @@
 /assets/brickadia
 /custom_assets
 /shaders/*.spv
+third_party/**/.gradle/
