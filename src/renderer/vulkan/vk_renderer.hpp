@@ -11,6 +11,7 @@
 #include "vk_types.hpp"
 
 #include "passes/background_pass.hpp"
+#include "passes/cull_pass.hpp"
 
 #include <camera/camera.hpp>
 #include <core/types.hpp>
@@ -59,12 +60,8 @@ public:
 
     VkDescriptorSetLayout _gpu_scene_data_descriptor_layout;
 
-    VkDescriptorSetLayout _compute_descriptor_layout;
-
-    VkPipelineLayout _cull_pipeline_layout;
-    VkPipeline _cull_pipeline;
-
     BackgroundPass _background;
+    CullPass _cull;
 
     MaterialSystem _material_system;
     DefaultResources _default_resources;
@@ -98,8 +95,6 @@ private:
     void init_descriptors();
 
     void init_pipelines();
-
-    void init_compute_pipeline();
 
     void init_imgui();
 

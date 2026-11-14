@@ -27,6 +27,8 @@ add_library(vulkan_renderer STATIC
     vk_swapchain.cpp
     passes/background_pass.hpp
     passes/background_pass.cpp
+    passes/cull_pass.hpp
+    passes/cull_pass.cpp
 )
 
 set_property(TARGET vulkan_renderer PROPERTY CXX_STANDARD 20)

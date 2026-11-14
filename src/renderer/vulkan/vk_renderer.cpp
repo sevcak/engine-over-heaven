@@ -29,8 +29,6 @@
 
 static AutoCVar_Float cvar_render_scale(
     "r.render_scale", "Resolution scale for rendering", 1.0f, CVarFlags::EditFloatDrag);
-static AutoCVar_Int cvar_cull(
-    "r.cull", "Enable frustum culling (1 = on, 0 = off)", 1, CVarFlags::EditCheckbox);
 
 void RenderStats::reset_counters()
 {
@@ -52,6 +50,8 @@ void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
     init_descriptors();
     _background.init(_gpu, _global_descriptor_allocator, _draw_image.image_view);
     _main_deletion_queue.push_function([this]() { _background.destroy(_gpu); });
+    _cull.init(_gpu, _global_descriptor_allocator, _frames);
+    _main_deletion_queue.push_function([this]() { _cull.destroy(_gpu); });
     init_pipelines();
     _default_resources.init(_gpu, _material_system, _global_descriptor_allocator);
     _main_deletion_queue.push_function([this]() { _default_resources.destroy(_gpu); });
@@ -318,32 +318,10 @@ void VulkanRenderer::init_descriptors()
     _main_deletion_queue.push_function([&]() {
         vkDestroyDescriptorSetLayout(_gpu.device, _gpu_scene_data_descriptor_layout, nullptr);
     });
-
-    DescriptorLayoutBuilder compute_builder;
-    compute_builder.add_binding(
-        0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene Object buffer.
-    compute_builder.add_binding(
-        1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's indirect buffer.
-    compute_builder.add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render stats buffer.
-    compute_builder.add_binding(
-        3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // Render Scene input commands buffer.
-    compute_builder.add_binding(
-        4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER); // The frame's transparent order buffer.
-    _compute_descriptor_layout = compute_builder.build(_gpu.device, VK_SHADER_STAGE_COMPUTE_BIT);
-
-    for (int i = 0; i < FRAME_OVERLAP; i++) {
-        _frames[i].compute_descriptor =
-            _global_descriptor_allocator.allocate(_gpu.device, _compute_descriptor_layout);
-    }
-    _main_deletion_queue.push_function([=, this]() {
-        vkDestroyDescriptorSetLayout(_gpu.device, _compute_descriptor_layout, nullptr);
-    });
 }
 
 void VulkanRenderer::init_pipelines()
 {
-    init_compute_pipeline();
-
     _material_system.register_type<GLTFMetallic_Roughness>();
     _material_system.build_pipelines(
         _gpu, {
@@ -352,46 +330,6 @@ void VulkanRenderer::init_pipelines()
                   .scene_data_layout = _gpu_scene_data_descriptor_layout,
               });
     _main_deletion_queue.push_function([this]() { _material_system.clear_resources(_gpu.device); });
-}
-
-void VulkanRenderer::init_compute_pipeline()
-{
-    VkShaderModule cull_shader;
-    if (!vkutil::load_shader_module("../shaders/cull.comp.spv", _gpu.device, &cull_shader)) {
-        OH_LOG_ERROR("Error building the cull shader.");
-        abort();
-    }
-
-    VkPipelineLayoutCreateInfo compute_layout_info = vkinit::pipeline_layout_create_info();
-    compute_layout_info.setLayoutCount = 1;
-    compute_layout_info.pSetLayouts = &_compute_descriptor_layout;
-
-    VkPushConstantRange push_constant {};
-    push_constant.offset = 0;
-    push_constant.size = sizeof(CullPushConstants);
-    push_constant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    compute_layout_info.pPushConstantRanges = &push_constant;
-    compute_layout_info.pushConstantRangeCount = 1;
-
-    VK_CHECK(
-        vkCreatePipelineLayout(_gpu.device, &compute_layout_info, nullptr, &_cull_pipeline_layout));
-
-    VkComputePipelineCreateInfo compute_pipeline_info {};
-    compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    compute_pipeline_info.layout = _cull_pipeline_layout;
-    compute_pipeline_info.stage =
-        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, cull_shader);
-
-    VK_CHECK(vkCreateComputePipelines(
-        _gpu.device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_cull_pipeline));
-
-    vkDestroyShaderModule(_gpu.device, cull_shader, nullptr);
-
-    _main_deletion_queue.push_function([=, this]() {
-        vkDestroyPipelineLayout(_gpu.device, _cull_pipeline_layout, nullptr);
-        vkDestroyPipeline(_gpu.device, _cull_pipeline, nullptr);
-    });
 }
 
 void VulkanRenderer::init_imgui()
@@ -516,58 +454,15 @@ void VulkanRenderer::draw_geometry(
         writer.update_set(_gpu.device, global_descriptor);
     }
 
-    {
-        DescriptorWriter compute_writer;
-        compute_writer.write_buffer(
-            0, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(1, get_current_frame().indirect_buffer.buffer, VK_WHOLE_SIZE, 0,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(2, get_current_frame().render_stats_buffer.buffer,
-            sizeof(GPURenderStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(3, scene.input_command_buffer.buffer, VK_WHOLE_SIZE, 0,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        compute_writer.write_buffer(4, get_current_frame().transparent_order_buffer.buffer,
-            VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    _cull.record(_gpu, cmd, get_current_frame(), scene, scene_data.viewproj);
 
-        compute_writer.update_set(_gpu.device, get_current_frame().compute_descriptor);
-    }
+    const u32 total_draws = static_cast<u32>(scene.index_buffers.size());
+    const u32 first_transparent = scene.first_transparent_index;
 
     VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
         _draw_image.image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo depth_attachment = vkinit::depth_attachment_info(
         _depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cull_pipeline_layout, 0, 1,
-        &get_current_frame().compute_descriptor, 0, nullptr);
-
-    const u32 total_draws = static_cast<u32>(scene.index_buffers.size());
-    const u32 first_transparent = scene.first_transparent_index;
-
-    CullPushConstants pc;
-    pc.extract_frustum_planes(scene_data.viewproj);
-    pc.object_count = total_draws;
-    pc.cull_enabled = cvar_cull.get();
-    pc.first_transparent_index = scene.first_transparent_index;
-    vkCmdPushConstants(
-        cmd, _cull_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullPushConstants), &pc);
-
-    vkCmdDispatch(cmd, (total_draws + 255) / 256, 1, 1);
-
-    VkMemoryBarrier2 memory_barrier {};
-    memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    memory_barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    // The Command Fetcher needs to read the Indirect Buffer before drawing starts.
-    memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-    memory_barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-
-    VkDependencyInfo dep_info {};
-    dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep_info.memoryBarrierCount = 1;
-    dep_info.pMemoryBarriers = &memory_barrier;
-
-    vkCmdPipelineBarrier2(cmd, &dep_info);
 
     VkRenderingInfo render_info =
         vkinit::rendering_info(_draw_extent, &color_attachment, &depth_attachment);
