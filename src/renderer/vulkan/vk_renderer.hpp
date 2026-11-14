@@ -10,28 +10,14 @@
 #include "vk_swapchain.hpp"
 #include "vk_types.hpp"
 
+#include "passes/background_pass.hpp"
+
 #include <camera/camera.hpp>
 #include <core/types.hpp>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
 struct SDL_Window;
-
-struct ComputePushConstants
-{
-    glm::vec4 data1;
-    glm::vec4 data2;
-    glm::vec4 data3;
-    glm::vec4 data4;
-};
-
-struct ComputeEffect
-{
-    const char *name;
-    VkPipeline pipeline;
-    VkPipelineLayout layout;
-    ComputePushConstants data;
-};
 
 struct RenderStats
 {
@@ -69,22 +55,16 @@ public:
 
     DescriptorAllocatorGrowable _global_descriptor_allocator;
 
-    VkDescriptorSet _draw_image_descriptors;
-    VkDescriptorSetLayout _draw_image_descriptor_layout;
-
     GPUSceneData scene_data;
 
     VkDescriptorSetLayout _gpu_scene_data_descriptor_layout;
 
     VkDescriptorSetLayout _compute_descriptor_layout;
 
-    VkPipelineLayout _gradient_pipeline_layout;
-
     VkPipelineLayout _cull_pipeline_layout;
     VkPipeline _cull_pipeline;
 
-    std::vector<ComputeEffect> _background_effects;
-    int _current_background_effect { 0 };
+    BackgroundPass _background;
 
     MaterialSystem _material_system;
     DefaultResources _default_resources;
@@ -101,8 +81,8 @@ private:
     /**
      * @brief Create the offscreen draw image and depth image that the scene renders into.
      *
-     * They are created once at startup and not rebuilt on resize. `draw()` clamps the draw extent to
-     * their size instead.
+     * They are created once at startup and not rebuilt on resize. `draw()` clamps the draw extent
+     * to their size instead.
      *
      * @param extent The size of both images in pixels.
      */
@@ -119,15 +99,11 @@ private:
 
     void init_pipelines();
 
-    void init_background_pipelines();
-
     void init_compute_pipeline();
 
     void init_imgui();
 
     void init_object_buffers();
-
-    void draw_background(VkCommandBuffer cmd);
 
     void draw_geometry(
         VkCommandBuffer cmd, RenderScene &scene, Camera &main_camera, RenderStats &stats);

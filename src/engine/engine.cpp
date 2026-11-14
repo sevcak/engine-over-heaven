@@ -130,13 +130,13 @@ void Engine::run()
         ImGui::End();
 
         if (ImGui::Begin("Background")) {
-            ComputeEffect &selected =
-                renderer._background_effects[renderer._current_background_effect];
+            BackgroundPass &background = renderer._background;
+            ComputeEffect &selected = background.effects[background.current_effect_index];
 
             ImGui::Text("Selected effect: %s", selected.name);
 
-            ImGui::SliderInt("Effect Index", &renderer._current_background_effect, 0,
-                renderer._background_effects.size() - 1);
+            ImGui::SliderInt("Effect Index", &background.current_effect_index, 0,
+                background.effects.size() - 1);
 
             ImGui::InputFloat4("data1", (f32 *)&selected.data.data1);
             ImGui::InputFloat4("data2", (f32 *)&selected.data.data2);

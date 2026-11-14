@@ -50,6 +50,8 @@ void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
     init_commands();
     init_sync_structures();
     init_descriptors();
+    _background.init(_gpu, _global_descriptor_allocator, _draw_image.image_view);
+    _main_deletion_queue.push_function([this]() { _background.destroy(_gpu); });
     init_pipelines();
     _default_resources.init(_gpu, _material_system, _global_descriptor_allocator);
     _main_deletion_queue.push_function([this]() { _default_resources.destroy(_gpu); });
@@ -126,7 +128,7 @@ void VulkanRenderer::draw(
     vkutil::transition_image(
         cmd, _draw_image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    draw_background(cmd);
+    _background.record(cmd, _draw_extent);
 
     // Transition the draw and depth images into correct layouts for the graphics pipeline.
     vkutil::transition_image(
@@ -281,6 +283,7 @@ void VulkanRenderer::init_sync_structures()
 
 void VulkanRenderer::init_descriptors()
 {
+    // The storage image entry is for the background pass's draw image set.
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 }
@@ -288,25 +291,8 @@ void VulkanRenderer::init_descriptors()
 
     _global_descriptor_allocator.init(_gpu.device, 10, sizes);
 
-    {
-        DescriptorLayoutBuilder builder;
-        builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        _draw_image_descriptor_layout = builder.build(_gpu.device, VK_SHADER_STAGE_COMPUTE_BIT);
-    }
-
-    _draw_image_descriptors =
-        _global_descriptor_allocator.allocate(_gpu.device, _draw_image_descriptor_layout);
-
-    DescriptorWriter writer;
-    writer.write_image(0, _draw_image.image_view, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL,
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    writer.update_set(_gpu.device, _draw_image_descriptors);
-
-    _main_deletion_queue.push_function([&]() {
-        _global_descriptor_allocator.destroy_pools(_gpu.device);
-
-        vkDestroyDescriptorSetLayout(_gpu.device, _draw_image_descriptor_layout, nullptr);
-    });
+    _main_deletion_queue.push_function(
+        [&]() { _global_descriptor_allocator.destroy_pools(_gpu.device); });
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
@@ -356,7 +342,6 @@ void VulkanRenderer::init_descriptors()
 
 void VulkanRenderer::init_pipelines()
 {
-    init_background_pipelines();
     init_compute_pipeline();
 
     _material_system.register_type<GLTFMetallic_Roughness>();
@@ -367,82 +352,6 @@ void VulkanRenderer::init_pipelines()
                   .scene_data_layout = _gpu_scene_data_descriptor_layout,
               });
     _main_deletion_queue.push_function([this]() { _material_system.clear_resources(_gpu.device); });
-}
-
-void VulkanRenderer::init_background_pipelines()
-{
-    VkPipelineLayoutCreateInfo compute_layout = {};
-    compute_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    compute_layout.pNext = nullptr;
-    compute_layout.pSetLayouts = &_draw_image_descriptor_layout;
-    compute_layout.setLayoutCount = 1;
-
-    VkPushConstantRange push_constant {};
-    push_constant.offset = 0;
-    push_constant.size = sizeof(ComputePushConstants);
-    push_constant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    compute_layout.pPushConstantRanges = &push_constant;
-    compute_layout.pushConstantRangeCount = 1;
-
-    VK_CHECK(
-        vkCreatePipelineLayout(_gpu.device, &compute_layout, nullptr, &_gradient_pipeline_layout));
-
-    VkShaderModule gradient_shader;
-    if (!vkutil::load_shader_module(
-            "../shaders/gradient_color.comp.spv", _gpu.device, &gradient_shader)) {
-        OH_LOG_ERROR("Error building the gradient compute shader.");
-    }
-    VkShaderModule sky_shader;
-    if (!vkutil::load_shader_module("../shaders/sky.comp.spv", _gpu.device, &sky_shader)) {
-        OH_LOG_ERROR("Error building the sky compute shader.");
-    }
-
-    VkPipelineShaderStageCreateInfo stage_info = {};
-    stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage_info.pNext = nullptr;
-    stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    stage_info.module = gradient_shader;
-    stage_info.pName = "main";
-
-    VkComputePipelineCreateInfo compute_pipeline_create_info = {};
-    compute_pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    compute_pipeline_create_info.pNext = nullptr;
-    compute_pipeline_create_info.layout = _gradient_pipeline_layout;
-    compute_pipeline_create_info.stage = stage_info;
-
-    ComputeEffect gradient_effect;
-    gradient_effect.layout = _gradient_pipeline_layout;
-    gradient_effect.name = "Gradient";
-    gradient_effect.data = {};
-    gradient_effect.data.data1 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
-    gradient_effect.data.data2 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-
-    VK_CHECK(vkCreateComputePipelines(_gpu.device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info,
-        nullptr, &gradient_effect.pipeline));
-
-    _background_effects.push_back(gradient_effect);
-
-    compute_pipeline_create_info.stage.module = sky_shader;
-
-    ComputeEffect sky_effect;
-    sky_effect.layout = _gradient_pipeline_layout;
-    sky_effect.name = "Sky";
-    sky_effect.data = {};
-    sky_effect.data.data1 = glm::vec4(0.1f, 0.2f, 0.4f, 0.97f);
-
-    VK_CHECK(vkCreateComputePipelines(_gpu.device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info,
-        nullptr, &sky_effect.pipeline));
-
-    _background_effects.push_back(sky_effect);
-
-    vkDestroyShaderModule(_gpu.device, gradient_shader, nullptr);
-    vkDestroyShaderModule(_gpu.device, sky_shader, nullptr);
-    _main_deletion_queue.push_function([=, this]() {
-        vkDestroyPipelineLayout(_gpu.device, _gradient_pipeline_layout, nullptr);
-        vkDestroyPipeline(_gpu.device, gradient_effect.pipeline, nullptr);
-        vkDestroyPipeline(_gpu.device, sky_effect.pipeline, nullptr);
-    });
 }
 
 void VulkanRenderer::init_compute_pipeline()
@@ -552,22 +461,6 @@ void VulkanRenderer::init_object_buffers()
         _main_deletion_queue.push_function(
             [this, i]() { _gpu.destroy_buffer(_frames[i].transparent_order_buffer); });
     }
-}
-
-void VulkanRenderer::draw_background(VkCommandBuffer cmd)
-{
-    ComputeEffect &effect = _background_effects[_current_background_effect];
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
-
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradient_pipeline_layout, 0, 1,
-        &_draw_image_descriptors, 0, nullptr);
-
-    vkCmdPushConstants(cmd, _gradient_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-        sizeof(ComputePushConstants), &effect.data);
-
-    vkCmdDispatch(
-        cmd, std::ceil(_draw_extent.width / 16.0f), std::ceil(_draw_extent.height / 16.0f), 1);
 }
 
 void VulkanRenderer::draw_geometry(
