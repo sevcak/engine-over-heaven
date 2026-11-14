@@ -40,44 +40,43 @@ void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
     _gpu.init(_window);
     _swapchain.init(_gpu, width, height);
     create_render_targets({ width, height });
-    _main_deletion_queue.push_function([this]() { destroy_render_targets(); });
     init_commands();
     init_sync_structures();
     init_descriptors();
     _background.init(_gpu, _global_descriptor_allocator, _draw_image.image_view);
-    _main_deletion_queue.push_function([this]() { _background.destroy(_gpu); });
     _cull.init(_gpu, _global_descriptor_allocator, _frames);
-    _main_deletion_queue.push_function([this]() { _cull.destroy(_gpu); });
     init_pipelines();
     _default_resources.init(_gpu, _material_system, _global_descriptor_allocator);
-    _main_deletion_queue.push_function([this]() { _default_resources.destroy(_gpu); });
     init_object_buffers();
     _imgui_pool = init_imgui(_gpu, _window, _swapchain.image_format);
-    _main_deletion_queue.push_function([this]() { destroy_imgui(_gpu, _imgui_pool); });
 
     _is_initialized = true;
 }
 
 void VulkanRenderer::cleanup()
 {
-    if (_is_initialized) {
-        vkDeviceWaitIdle(_gpu.device);
-
-        for (int i = 0; i < FRAME_OVERLAP; i++) {
-            vkDestroyCommandPool(_gpu.device, _frames[i].command_pool, nullptr);
-
-            vkDestroyFence(_gpu.device, _frames[i].render_fence, nullptr);
-            vkDestroySemaphore(_gpu.device, _frames[i].swapchain_semaphore, nullptr);
-
-            _frames[i].deletion_queue.flush();
-        }
-
-        _main_deletion_queue.flush();
-
-        _swapchain.destroy(_gpu);
-
-        _gpu.destroy();
+    if (!_is_initialized) {
+        return;
     }
+
+    vkDeviceWaitIdle(_gpu.device);
+
+    for (FrameData &frame : _frames) {
+        frame.deletion_queue.flush();
+    }
+
+    destroy_imgui(_gpu, _imgui_pool);
+    destroy_object_buffers();
+    _default_resources.destroy(_gpu);
+    destroy_pipelines();
+    _cull.destroy(_gpu);
+    _background.destroy(_gpu);
+    destroy_descriptors();
+    destroy_sync_structures();
+    destroy_commands();
+    destroy_render_targets();
+    _swapchain.destroy(_gpu);
+    _gpu.destroy();
 
     _is_initialized = false;
 }
@@ -293,6 +292,14 @@ void VulkanRenderer::init_commands()
     }
 }
 
+void VulkanRenderer::destroy_commands()
+{
+    // Destroying a pool also frees the command buffers allocated from it.
+    for (FrameData &frame : _frames) {
+        vkDestroyCommandPool(_gpu.device, frame.command_pool, nullptr);
+    }
+}
+
 void VulkanRenderer::init_sync_structures()
 {
     VkFenceCreateInfo fence_create_info = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
@@ -302,6 +309,14 @@ void VulkanRenderer::init_sync_structures()
         VK_CHECK(vkCreateFence(_gpu.device, &fence_create_info, nullptr, &_frames[i].render_fence));
         VK_CHECK(vkCreateSemaphore(
             _gpu.device, &semaphore_create_info, nullptr, &_frames[i].swapchain_semaphore));
+    }
+}
+
+void VulkanRenderer::destroy_sync_structures()
+{
+    for (FrameData &frame : _frames) {
+        vkDestroySemaphore(_gpu.device, frame.swapchain_semaphore, nullptr);
+        vkDestroyFence(_gpu.device, frame.render_fence, nullptr);
     }
 }
 
@@ -315,9 +330,6 @@ void VulkanRenderer::init_descriptors()
 
     _global_descriptor_allocator.init(_gpu.device, 10, sizes);
 
-    _main_deletion_queue.push_function(
-        [&]() { _global_descriptor_allocator.destroy_pools(_gpu.device); });
-
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
@@ -327,9 +339,6 @@ void VulkanRenderer::init_descriptors()
 
         _frames[i].frame_descriptors = DescriptorAllocatorGrowable {};
         _frames[i].frame_descriptors.init(_gpu.device, 1000, frame_sizes);
-
-        _main_deletion_queue.push_function(
-            [&, i]() { _frames[i].frame_descriptors.destroy_pools(_gpu.device); });
     }
 
     {
@@ -339,9 +348,17 @@ void VulkanRenderer::init_descriptors()
         _gpu_scene_data_descriptor_layout =
             builder.build(_gpu.device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     }
-    _main_deletion_queue.push_function([&]() {
-        vkDestroyDescriptorSetLayout(_gpu.device, _gpu_scene_data_descriptor_layout, nullptr);
-    });
+}
+
+void VulkanRenderer::destroy_descriptors()
+{
+    vkDestroyDescriptorSetLayout(_gpu.device, _gpu_scene_data_descriptor_layout, nullptr);
+
+    for (FrameData &frame : _frames) {
+        frame.frame_descriptors.destroy_pools(_gpu.device);
+    }
+
+    _global_descriptor_allocator.destroy_pools(_gpu.device);
 }
 
 void VulkanRenderer::init_pipelines()
@@ -353,7 +370,11 @@ void VulkanRenderer::init_pipelines()
                   .depth_format = _depth_image.image_format,
                   .scene_data_layout = _gpu_scene_data_descriptor_layout,
               });
-    _main_deletion_queue.push_function([this]() { _material_system.clear_resources(_gpu.device); });
+}
+
+void VulkanRenderer::destroy_pipelines()
+{
+    _material_system.clear_resources(_gpu.device);
 }
 
 void VulkanRenderer::init_object_buffers()
@@ -363,18 +384,21 @@ void VulkanRenderer::init_object_buffers()
             _gpu.create_buffer(sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
                 VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                 VMA_MEMORY_USAGE_CPU_TO_GPU);
-        _main_deletion_queue.push_function(
-            [this, i]() { _gpu.destroy_buffer(_frames[i].indirect_buffer); });
 
         _frames[i].render_stats_buffer = _gpu.create_buffer(sizeof(GPURenderStats),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU);
-        _main_deletion_queue.push_function(
-            [this, i]() { _gpu.destroy_buffer(_frames[i].render_stats_buffer); });
 
         _frames[i].transparent_order_buffer = _gpu.create_buffer(sizeof(u32) * MAX_OBJECTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-        _main_deletion_queue.push_function(
-            [this, i]() { _gpu.destroy_buffer(_frames[i].transparent_order_buffer); });
+    }
+}
+
+void VulkanRenderer::destroy_object_buffers()
+{
+    for (FrameData &frame : _frames) {
+        _gpu.destroy_buffer(frame.transparent_order_buffer);
+        _gpu.destroy_buffer(frame.render_stats_buffer);
+        _gpu.destroy_buffer(frame.indirect_buffer);
     }
 }
 
