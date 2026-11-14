@@ -44,7 +44,9 @@ void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
     _window = window;
 
     _gpu.init(_window);
-    init_swapchain(width, height);
+    _swapchain.init(_gpu, width, height);
+    create_render_targets({ width, height });
+    _main_deletion_queue.push_function([this]() { destroy_render_targets(); });
     init_commands();
     init_sync_structures();
     init_descriptors();
@@ -70,13 +72,10 @@ void VulkanRenderer::cleanup()
 
             _frames[i].deletion_queue.flush();
         }
-        for (usize i = 0; i < _render_semaphores.size(); i++) {
-            vkDestroySemaphore(_gpu.device, _render_semaphores[i], nullptr);
-        }
 
         _main_deletion_queue.flush();
 
-        destroy_swapchain();
+        _swapchain.destroy(_gpu);
 
         _gpu.destroy();
     }
@@ -93,10 +92,8 @@ void VulkanRenderer::draw(
     get_current_frame().deletion_queue.flush();
     get_current_frame().frame_descriptors.clear_pools(_gpu.device);
 
-    VK_CHECK(vkResetFences(_gpu.device, 1, &get_current_frame().render_fence));
-
     u32 swapchain_image_index;
-    VkResult e = vkAcquireNextImageKHR(_gpu.device, _swapchain, 1000000000,
+    VkResult e = vkAcquireNextImageKHR(_gpu.device, _swapchain.handle, 1000000000,
         get_current_frame().swapchain_semaphore, nullptr, &swapchain_image_index);
     if (e == VK_ERROR_OUT_OF_DATE_KHR) {
         resize_requested = true;
@@ -105,6 +102,10 @@ void VulkanRenderer::draw(
         OH_LOG_FATAL("Failed to acquire swapchain image: {}", string_VkResult(e));
         abort();
     }
+
+    // Reset only once this frame is sure to submit, which signals the fence again. Resetting before
+    // a failed acquire would leave the fence unsignaled, and the next wait on it would time out.
+    VK_CHECK(vkResetFences(_gpu.device, 1, &get_current_frame().render_fence));
 
     VkCommandBuffer cmd = get_current_frame().main_command_buffer;
 
@@ -116,8 +117,8 @@ void VulkanRenderer::draw(
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmd_begin_info));
 
     f32 render_scale = cvar_render_scale.get();
-    u32 base_width = std::min(_swapchain_extent.width, _draw_image.image_extent.width);
-    u32 base_height = std::min(_swapchain_extent.height, _draw_image.image_extent.height);
+    u32 base_width = std::min(_swapchain.extent.width, _draw_image.image_extent.width);
+    u32 base_height = std::min(_swapchain.extent.height, _draw_image.image_extent.height);
     _draw_extent.width = std::max(1u, static_cast<u32>(base_width * render_scale));
     _draw_extent.height = std::max(1u, static_cast<u32>(base_height * render_scale));
 
@@ -138,22 +139,22 @@ void VulkanRenderer::draw(
     // Transition the draw image and the swapchain image into their correct transfer layouts.
     vkutil::transition_image(cmd, _draw_image.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    vkutil::transition_image(cmd, _swapchain_images[swapchain_image_index],
+    vkutil::transition_image(cmd, _swapchain.images[swapchain_image_index],
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     // Copy from the draw image into the swapchain.
-    vkutil::copy_image_to_image(cmd, _draw_image.image, _swapchain_images[swapchain_image_index],
-        _draw_extent, _swapchain_extent);
+    vkutil::copy_image_to_image(cmd, _draw_image.image, _swapchain.images[swapchain_image_index],
+        _draw_extent, _swapchain.extent);
 
     // Transition the swapchain image so we can draw into it.
-    vkutil::transition_image(cmd, _swapchain_images[swapchain_image_index],
+    vkutil::transition_image(cmd, _swapchain.images[swapchain_image_index],
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     // Draw ImGui into the swapchain image.
-    draw_imgui(cmd, _swapchain_image_views[swapchain_image_index], stats);
+    draw_imgui(cmd, _swapchain.image_views[swapchain_image_index], stats);
 
     // Set swapchain image layout to Present so it can be shown on the screen.
-    vkutil::transition_image(cmd, _swapchain_images[swapchain_image_index],
+    vkutil::transition_image(cmd, _swapchain.images[swapchain_image_index],
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
     VK_CHECK(vkEndCommandBuffer(cmd));
@@ -163,7 +164,7 @@ void VulkanRenderer::draw(
     VkSemaphoreSubmitInfo wait_info =
         vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
             get_current_frame().swapchain_semaphore);
-    VkSemaphore signal_semaphore = _render_semaphores[swapchain_image_index];
+    VkSemaphore signal_semaphore = _swapchain.render_semaphores[swapchain_image_index];
     VkSemaphoreSubmitInfo signal_info =
         vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, signal_semaphore);
 
@@ -175,7 +176,7 @@ void VulkanRenderer::draw(
     VkPresentInfoKHR present_info = {};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.pNext = nullptr;
-    present_info.pSwapchains = &_swapchain;
+    present_info.pSwapchains = &_swapchain.handle;
     present_info.swapchainCount = 1;
 
     present_info.pWaitSemaphores = &signal_semaphore;
@@ -194,11 +195,9 @@ void VulkanRenderer::draw(
     _frame_number++;
 }
 
-void VulkanRenderer::init_swapchain(u32 width, u32 height)
+void VulkanRenderer::create_render_targets(VkExtent2D extent)
 {
-    create_swapchain(width, height);
-
-    VkExtent3D draw_image_extent = { width, height, 1 };
+    VkExtent3D draw_image_extent = { extent.width, extent.height, 1 };
 
     _draw_image.image_format = VK_FORMAT_R16G16B16A16_SFLOAT;
     _draw_image.image_extent = draw_image_extent;
@@ -240,14 +239,15 @@ void VulkanRenderer::init_swapchain(u32 width, u32 height)
         _depth_image.image_format, _depth_image.image, VK_IMAGE_ASPECT_DEPTH_BIT);
 
     VK_CHECK(vkCreateImageView(_gpu.device, &dview_info, nullptr, &_depth_image.image_view));
+}
 
-    _main_deletion_queue.push_function([=, this]() {
-        vkDestroyImageView(_gpu.device, _draw_image.image_view, nullptr);
-        vmaDestroyImage(_gpu.allocator, _draw_image.image, _draw_image.allocation);
+void VulkanRenderer::destroy_render_targets()
+{
+    vkDestroyImageView(_gpu.device, _draw_image.image_view, nullptr);
+    vmaDestroyImage(_gpu.allocator, _draw_image.image, _draw_image.allocation);
 
-        vkDestroyImageView(_gpu.device, _depth_image.image_view, nullptr);
-        vmaDestroyImage(_gpu.allocator, _depth_image.image, _depth_image.allocation);
-    });
+    vkDestroyImageView(_gpu.device, _depth_image.image_view, nullptr);
+    vmaDestroyImage(_gpu.allocator, _depth_image.image, _depth_image.allocation);
 }
 
 void VulkanRenderer::init_commands()
@@ -276,13 +276,6 @@ void VulkanRenderer::init_sync_structures()
         VK_CHECK(vkCreateFence(_gpu.device, &fence_create_info, nullptr, &_frames[i].render_fence));
         VK_CHECK(vkCreateSemaphore(
             _gpu.device, &semaphore_create_info, nullptr, &_frames[i].swapchain_semaphore));
-    }
-
-    int swapchain_image_count = _swapchain_images.size();
-    _render_semaphores.resize(swapchain_image_count);
-    for (int i = 0; i < swapchain_image_count; i++) {
-        VK_CHECK(vkCreateSemaphore(
-            _gpu.device, &semaphore_create_info, nullptr, &_render_semaphores[i]));
     }
 }
 
@@ -528,7 +521,7 @@ void VulkanRenderer::init_imgui()
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO
     };
     init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-    init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &_swapchain_image_format;
+    init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &_swapchain.image_format;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&init_info);
     ImGui_ImplVulkan_CreateFontsTexture();
@@ -558,37 +551,6 @@ void VulkanRenderer::init_object_buffers()
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
         _main_deletion_queue.push_function(
             [this, i]() { _gpu.destroy_buffer(_frames[i].transparent_order_buffer); });
-    }
-}
-
-void VulkanRenderer::create_swapchain(u32 width, u32 height)
-{
-    vkb::SwapchainBuilder swapchain_builder { _gpu.physical_device, _gpu.device, _gpu.surface };
-
-    _swapchain_image_format = VK_FORMAT_B8G8R8A8_UNORM;
-
-    vkb::Swapchain vkb_swapchain =
-        swapchain_builder
-            .set_desired_format(VkSurfaceFormatKHR { .format = _swapchain_image_format,
-                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR })
-            .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-            .set_desired_extent(width, height)
-            .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-            .build()
-            .value();
-
-    _swapchain_extent = vkb_swapchain.extent;
-    _swapchain = vkb_swapchain.swapchain;
-    _swapchain_images = vkb_swapchain.get_images().value();
-    _swapchain_image_views = vkb_swapchain.get_image_views().value();
-}
-
-void VulkanRenderer::destroy_swapchain()
-{
-    vkDestroySwapchainKHR(_gpu.device, _swapchain, nullptr);
-
-    for (usize i = 0; i < _swapchain_image_views.size(); i++) {
-        vkDestroyImageView(_gpu.device, _swapchain_image_views[i], nullptr);
     }
 }
 
@@ -796,7 +758,7 @@ void VulkanRenderer::draw_imgui(
     VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
         target_image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingInfo render_info =
-        vkinit::rendering_info(_swapchain_extent, &color_attachment, nullptr);
+        vkinit::rendering_info(_swapchain.extent, &color_attachment, nullptr);
 
     vkCmdBeginRendering(cmd, &render_info);
 
@@ -807,8 +769,5 @@ void VulkanRenderer::draw_imgui(
 
 void VulkanRenderer::resize_swapchain(u32 width, u32 height)
 {
-    vkDeviceWaitIdle(_gpu.device);
-
-    destroy_swapchain();
-    create_swapchain(width, height);
+    _swapchain.recreate(_gpu, width, height);
 }

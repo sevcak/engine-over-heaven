@@ -195,7 +195,7 @@ void Engine::update_scene()
 
     glm::mat4 view = main_camera.get_view_matrix();
     f32 fov_deg = std::clamp(static_cast<f32>(cvar_main_fov.get()), 10.0f, 170.0f);
-    const VkExtent2D extent = renderer._swapchain_extent;
+    const VkExtent2D extent = renderer._swapchain.extent;
     glm::mat4 projection = glm::perspective(
         glm::radians(fov_deg), (f32)extent.width / (f32)extent.height, 10000.0f, 0.1f);
     projection[1][1] *= -1;

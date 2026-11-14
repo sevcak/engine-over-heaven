@@ -23,6 +23,8 @@ add_library(vulkan_renderer STATIC
     vk_context.cpp
     vk_default_resources.cpp
     vk_default_resources.hpp
+    vk_swapchain.hpp
+    vk_swapchain.cpp
 )
 
 set_property(TARGET vulkan_renderer PROPERTY CXX_STANDARD 20)

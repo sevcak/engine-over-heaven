@@ -7,7 +7,9 @@
 #include "vk_gpu_data.hpp"
 #include "vk_material_system.hpp"
 #include "vk_render_scene.hpp"
+#include "vk_swapchain.hpp"
 #include "vk_types.hpp"
+
 #include <camera/camera.hpp>
 #include <core/types.hpp>
 #include <vector>
@@ -52,14 +54,7 @@ public:
 
     GpuContext _gpu;
 
-    VkSwapchainKHR _swapchain;
-    VkFormat _swapchain_image_format;
-
-    std::vector<VkImage> _swapchain_images;
-    std::vector<VkImageView> _swapchain_image_views;
-    VkExtent2D _swapchain_extent;
-
-    std::vector<VkSemaphore> _render_semaphores;
+    Swapchain _swapchain;
 
     FrameData _frames[FRAME_OVERLAP];
 
@@ -103,7 +98,18 @@ public:
     void resize_swapchain(u32 width, u32 height);
 
 private:
-    void init_swapchain(u32 width, u32 height);
+    /**
+     * @brief Create the offscreen draw image and depth image that the scene renders into.
+     *
+     * They are created once at startup and not rebuilt on resize. `draw()` clamps the draw extent to
+     * their size instead.
+     *
+     * @param extent The size of both images in pixels.
+     */
+    void create_render_targets(VkExtent2D extent);
+
+    /** Destroy the draw and depth images. The GPU must be idle. */
+    void destroy_render_targets();
 
     void init_commands();
 
@@ -120,10 +126,6 @@ private:
     void init_imgui();
 
     void init_object_buffers();
-
-    void create_swapchain(u32 width, u32 height);
-
-    void destroy_swapchain();
 
     void draw_background(VkCommandBuffer cmd);
 
