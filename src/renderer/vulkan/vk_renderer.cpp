@@ -136,7 +136,34 @@ void VulkanRenderer::draw(
     vkutil::transition_image(cmd, _depth_image.image, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
-    draw_geometry(cmd, scene, main_camera, stats);
+    FrameData &frame = get_current_frame();
+
+    // Read back the visible triangle count the cull pass wrote the last time this frame ran.
+    stats.reset_counters();
+    stats.total_triangle_count = scene.total_triangle_count;
+    GPURenderStats *gpu_stats = (GPURenderStats *)frame.render_stats_buffer.info.pMappedData;
+    stats.visible_triangle_count = gpu_stats->visible_triangles;
+    memset(gpu_stats, 0, sizeof(GPURenderStats));
+
+    if (scene.total_triangle_count > 0) {
+        auto start_time = std::chrono::system_clock::now();
+
+        // The cull pass reads the transparent order, so it must be uploaded first.
+        sort_transparent_back_to_front(scene, main_camera.position);
+        memcpy(frame.transparent_order_buffer.info.pMappedData,
+            scene.transparent_render_order.data(),
+            scene.transparent_render_order.size() * sizeof(u32));
+        VkDescriptorSet scene_data_set = create_scene_data_set(scene);
+
+        _cull.record(_gpu, cmd, frame, scene, scene_data.viewproj);
+        stats.drawcall_count = record_forward_pass(cmd, scene, frame.indirect_buffer.buffer,
+            scene_data_set, _draw_image.image_view, _depth_image.image_view, _draw_extent);
+
+        auto end_time = std::chrono::system_clock::now();
+        auto time_elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        stats.mesh_draw_time = time_elapsed.count() / 1000.0f;
+    }
 
     // Transition the draw image and the swapchain image into their correct transfer layouts.
     vkutil::transition_image(cmd, _draw_image.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -401,38 +428,8 @@ void VulkanRenderer::init_object_buffers()
     }
 }
 
-void VulkanRenderer::draw_geometry(
-    VkCommandBuffer cmd, RenderScene &scene, Camera &main_camera, RenderStats &stats)
+VkDescriptorSet VulkanRenderer::create_scene_data_set(const RenderScene &scene)
 {
-    stats.reset_counters();
-    stats.total_triangle_count = scene.total_triangle_count;
-    GPURenderStats *gpu_stats_ptr =
-        (GPURenderStats *)get_current_frame().render_stats_buffer.info.pMappedData;
-    stats.visible_triangle_count = gpu_stats_ptr->visible_triangles;
-    memset(gpu_stats_ptr, 0, sizeof(GPURenderStats));
-
-    if (scene.total_triangle_count == 0) {
-        return;
-    }
-
-    auto start_time = std::chrono::system_clock::now();
-
-    // Sort the transparent objects by distance from the camera before rendering them.
-    std::iota(scene.transparent_render_order.begin(), scene.transparent_render_order.end(),
-        scene.first_transparent_index);
-    for (usize i = 0; i < scene.transparent_centers.size(); ++i) {
-        glm::vec3 offset = main_camera.position - scene.transparent_centers[i];
-        scene.center_distances_sq[i] = glm::dot(offset, offset);
-    }
-    std::sort(scene.transparent_render_order.begin(), scene.transparent_render_order.end(),
-        [&scene, &distances_sq = scene.center_distances_sq](const u32 a, const u32 b) {
-            f32 dist_a = distances_sq[a - scene.first_transparent_index];
-            f32 dist_b = distances_sq[b - scene.first_transparent_index];
-            return dist_a > dist_b; // Sort from farthest to nearest
-        });
-    memcpy(get_current_frame().transparent_order_buffer.info.pMappedData,
-        scene.transparent_render_order.data(), scene.transparent_render_order.size() * sizeof(u32));
-
     AllocatedBuffer gpu_scene_data_buffer = _gpu.create_buffer(
         sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
@@ -442,102 +439,17 @@ void VulkanRenderer::draw_geometry(
     GPUSceneData *scene_uniform_data = (GPUSceneData *)gpu_scene_data_buffer.info.pMappedData;
     *scene_uniform_data = scene_data;
 
-    VkDescriptorSet global_descriptor = get_current_frame().frame_descriptors.allocate(
+    VkDescriptorSet scene_data_set = get_current_frame().frame_descriptors.allocate(
         _gpu.device, _gpu_scene_data_descriptor_layout);
 
-    {
-        DescriptorWriter writer;
-        writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        writer.write_buffer(
-            1, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.update_set(_gpu.device, global_descriptor);
-    }
+    DescriptorWriter writer;
+    writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_buffer(
+        1, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    writer.update_set(_gpu.device, scene_data_set);
 
-    _cull.record(_gpu, cmd, get_current_frame(), scene, scene_data.viewproj);
-
-    const u32 total_draws = static_cast<u32>(scene.index_buffers.size());
-    const u32 first_transparent = scene.first_transparent_index;
-
-    VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
-        _draw_image.image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    VkRenderingAttachmentInfo depth_attachment = vkinit::depth_attachment_info(
-        _depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-    VkRenderingInfo render_info =
-        vkinit::rendering_info(_draw_extent, &color_attachment, &depth_attachment);
-    vkCmdBeginRendering(cmd, &render_info);
-
-    VkViewport viewport = {};
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = _draw_extent.width;
-    viewport.height = _draw_extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor = {};
-    scissor.offset.x = 0;
-    scissor.offset.y = 0;
-    scissor.extent.width = _draw_extent.width;
-    scissor.extent.height = _draw_extent.height;
-
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    // Track the batching state.
-    MaterialInstance *last_material = nullptr;
-    VkBuffer last_index_buffer = VK_NULL_HANDLE;
-    u32 batch_start = 0;
-    u32 batch_count = 0;
-
-    auto flush_batch = [&]() {
-        if (batch_count == 0)
-            return;
-
-        // Bind the state for this batch.
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, last_material->pipeline->pipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            last_material->pipeline->layout, 0, 1, &global_descriptor, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            last_material->pipeline->layout, 1, 1, &last_material->material_set, 0, nullptr);
-
-        vkCmdBindIndexBuffer(cmd, last_index_buffer, 0, VK_INDEX_TYPE_UINT32);
-
-        u32 offset = batch_start * sizeof(VkDrawIndexedIndirectCommand);
-        u32 stride = sizeof(VkDrawIndexedIndirectCommand);
-        vkCmdDrawIndexedIndirect(
-            cmd, get_current_frame().indirect_buffer.buffer, offset, batch_count, stride);
-        stats.drawcall_count++;
-
-        // Move the start index forward for the next batch.
-        batch_start += batch_count;
-        batch_count = 0;
-    };
-
-    for (u32 d = 0; d < total_draws; d++) {
-        const u32 slot =
-            d < first_transparent ? d : scene.transparent_render_order[d - first_transparent];
-        MaterialInstance *material = scene.materials[slot];
-        VkBuffer index_buffer = scene.index_buffers[slot];
-
-        // If the material or index buffer changes, flush the batch and start a new one.
-        if (material != last_material || index_buffer != last_index_buffer) {
-            flush_batch();
-            last_material = material;
-            last_index_buffer = index_buffer;
-        }
-        batch_count++;
-    }
-    flush_batch();
-
-    vkCmdEndRendering(cmd);
-
-    auto end_time = std::chrono::system_clock::now();
-    auto time_elapsed =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-    stats.mesh_draw_time = time_elapsed.count() / 1000.0f;
+    return scene_data_set;
 }
 
 void VulkanRenderer::draw_imgui(

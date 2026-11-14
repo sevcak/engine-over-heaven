@@ -1,6 +1,9 @@
 #include "vk_render_scene.hpp"
 
 #include <algorithm>
+#include <numeric>
+
+#include <glm/geometric.hpp>
 #include <tuple>
 #include <vector>
 
@@ -87,4 +90,20 @@ void destroy_render_scene(const GpuContext &gpu, RenderScene &scene)
     gpu.destroy_buffer(scene.object_buffer);
     gpu.destroy_buffer(scene.input_command_buffer);
     scene = {};
+}
+
+void sort_transparent_back_to_front(RenderScene &scene, const glm::vec3 &camera_position)
+{
+    std::iota(scene.transparent_render_order.begin(), scene.transparent_render_order.end(),
+        scene.first_transparent_index);
+    for (usize i = 0; i < scene.transparent_centers.size(); ++i) {
+        glm::vec3 offset = camera_position - scene.transparent_centers[i];
+        scene.center_distances_sq[i] = glm::dot(offset, offset);
+    }
+    std::sort(scene.transparent_render_order.begin(), scene.transparent_render_order.end(),
+        [&scene, &distances_sq = scene.center_distances_sq](const u32 a, const u32 b) {
+            f32 dist_a = distances_sq[a - scene.first_transparent_index];
+            f32 dist_b = distances_sq[b - scene.first_transparent_index];
+            return dist_a > dist_b; // Sort from farthest to nearest
+        });
 }

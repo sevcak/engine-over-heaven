@@ -110,3 +110,13 @@ RenderScene build_render_scene(const GpuContext &gpu, DrawContext &ctx);
  * @param scene The scene to destroy.
  */
 void destroy_render_scene(const GpuContext &gpu, RenderScene &scene);
+
+/**
+ * @brief Rebuild `transparent_render_order` so the transparent slots go from farthest to nearest.
+ *
+ * Runs every frame, since the order depends on the camera. Uses `center_distances_sq` as scratch.
+ *
+ * @param scene The scene whose transparent order to rebuild.
+ * @param camera_position The world-space camera position to measure distances from.
+ */
+void sort_transparent_back_to_front(RenderScene &scene, const glm::vec3 &camera_position);
