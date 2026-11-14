@@ -31,6 +31,8 @@ add_library(vulkan_renderer STATIC
     passes/cull_pass.cpp
     passes/forward_pass.hpp
     passes/forward_pass.cpp
+    vk_imgui.hpp
+    vk_imgui.cpp
 )
 
 set_property(TARGET vulkan_renderer PROPERTY CXX_STANDARD 20)

@@ -18,10 +18,6 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
-#include "imgui.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_impl_vulkan.h"
-
 #include "VkBootstrap.h"
 #include "vk_types.hpp"
 
@@ -56,7 +52,8 @@ void VulkanRenderer::init(SDL_Window *window, u32 width, u32 height)
     _default_resources.init(_gpu, _material_system, _global_descriptor_allocator);
     _main_deletion_queue.push_function([this]() { _default_resources.destroy(_gpu); });
     init_object_buffers();
-    init_imgui();
+    _imgui_pool = init_imgui(_gpu, _window, _swapchain.image_format);
+    _main_deletion_queue.push_function([this]() { destroy_imgui(_gpu, _imgui_pool); });
 
     _is_initialized = true;
 }
@@ -180,7 +177,7 @@ void VulkanRenderer::draw(
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     // Draw ImGui into the swapchain image.
-    draw_imgui(cmd, _swapchain.image_views[swapchain_image_index], stats);
+    record_imgui(cmd, _swapchain.image_views[swapchain_image_index], _swapchain.extent);
 
     // Set swapchain image layout to Present so it can be shown on the screen.
     vkutil::transition_image(cmd, _swapchain.images[swapchain_image_index],
@@ -359,53 +356,6 @@ void VulkanRenderer::init_pipelines()
     _main_deletion_queue.push_function([this]() { _material_system.clear_resources(_gpu.device); });
 }
 
-void VulkanRenderer::init_imgui()
-{
-    VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 }, { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets = 1000;
-    pool_info.poolSizeCount = (u32)std::size(pool_sizes);
-    pool_info.pPoolSizes = pool_sizes;
-
-    VkDescriptorPool imgui_pool;
-    VK_CHECK(vkCreateDescriptorPool(_gpu.device, &pool_info, nullptr, &imgui_pool));
-
-    ImGui::CreateContext();
-    ImGui_ImplSDL2_InitForVulkan(_window);
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = _gpu.instance;
-    init_info.PhysicalDevice = _gpu.physical_device;
-    init_info.Device = _gpu.device;
-    init_info.Queue = _gpu.graphics_queue;
-    init_info.DescriptorPool = imgui_pool;
-    init_info.MinImageCount = 3;
-    init_info.ImageCount = 3;
-    init_info.UseDynamicRendering = true;
-    init_info.PipelineRenderingCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO
-    };
-    init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-    init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &_swapchain.image_format;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    ImGui_ImplVulkan_Init(&init_info);
-    ImGui_ImplVulkan_CreateFontsTexture();
-
-    _main_deletion_queue.push_function([=, this]() {
-        ImGui_ImplVulkan_Shutdown();
-        vkDestroyDescriptorPool(_gpu.device, imgui_pool, nullptr);
-    });
-}
-
 void VulkanRenderer::init_object_buffers()
 {
     for (usize i = 0; i < FRAME_OVERLAP; i++) {
@@ -450,21 +400,6 @@ VkDescriptorSet VulkanRenderer::create_scene_data_set(const RenderScene &scene)
     writer.update_set(_gpu.device, scene_data_set);
 
     return scene_data_set;
-}
-
-void VulkanRenderer::draw_imgui(
-    VkCommandBuffer cmd, VkImageView target_image_view, RenderStats &stats)
-{
-    VkRenderingAttachmentInfo color_attachment = vkinit::attachment_info(
-        target_image_view, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    VkRenderingInfo render_info =
-        vkinit::rendering_info(_swapchain.extent, &color_attachment, nullptr);
-
-    vkCmdBeginRendering(cmd, &render_info);
-
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
-    vkCmdEndRendering(cmd);
 }
 
 void VulkanRenderer::resize_swapchain(u32 width, u32 height)

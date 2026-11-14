@@ -7,6 +7,7 @@
 #include "vk_gpu_data.hpp"
 #include "vk_material_system.hpp"
 #include "vk_render_scene.hpp"
+#include "vk_imgui.hpp"
 #include "vk_swapchain.hpp"
 #include "vk_types.hpp"
 
@@ -64,6 +65,9 @@ public:
     BackgroundPass _background;
     CullPass _cull;
 
+    /** The debug UI backend's descriptor pool, from `init_imgui`. */
+    VkDescriptorPool _imgui_pool { VK_NULL_HANDLE };
+
     MaterialSystem _material_system;
     DefaultResources _default_resources;
 
@@ -97,8 +101,6 @@ private:
 
     void init_pipelines();
 
-    void init_imgui();
-
     void init_object_buffers();
 
     /**
@@ -112,6 +114,4 @@ private:
      * @return The set, allocated from the current frame's descriptor allocator.
      */
     VkDescriptorSet create_scene_data_set(const RenderScene &scene);
-
-    void draw_imgui(VkCommandBuffer cmd, VkImageView target_image_view, RenderStats &stats);
 };

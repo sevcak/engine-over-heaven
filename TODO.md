@@ -16,6 +16,7 @@
 
 - [ ] Refactor CMake shader compilation to automatically detect and compile new shaders without manual globbing/caching issues.
 - [ ] Implement a proper virtual file system or path resolution system to avoid hardcoding relative paths (e.g., `../../shaders/...`) in engine code.
+- [ ] Upgrade ImGui (currently 1.90.6, copied into `third_party/imgui/`) in its own commit, and vendor it as a git submodule like SDL and fastgltf. Then let the Vulkan backend create its own descriptor pool (`DescriptorPoolSize` in the init info) and remove the hand-written pool in `vk_imgui.cpp`.
 
 ## Scene Management
 
