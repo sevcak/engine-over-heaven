@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "vk_loader.hpp"
+#include "assets/gltf_loader.hpp"
 #include "vk_render_scene.hpp"
 
 struct DefaultResources;

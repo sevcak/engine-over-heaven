@@ -1,5 +1,11 @@
 #pragma once
 
+/**
+ * @file
+ * Loading glTF and GLB files: the meshes, materials, textures and node hierarchy of a loaded file,
+ * and `load_gltf`, which uploads them to the GPU.
+ */
+
 #include "vk_descriptors.hpp"
 #include "vk_material_system.hpp"
 #include "vk_types.hpp"

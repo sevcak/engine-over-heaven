@@ -12,8 +12,6 @@ add_library(vulkan_renderer STATIC
     vk_initializers.hpp
     vk_pipelines.cpp
     vk_pipelines.hpp
-    vk_loader.cpp
-    vk_loader.hpp
     vk_material_system.cpp
     vk_material_system.hpp
     vk_render_scene.cpp
@@ -45,9 +43,7 @@ target_link_libraries(vulkan_renderer PUBLIC
     glm
     Vulkan::Vulkan
     fmt::fmt
-    stb_image
     SDL2::SDL2
     vkbootstrap
     imgui
-    fastgltf::fastgltf
 )

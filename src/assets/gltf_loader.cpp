@@ -1,4 +1,4 @@
-#include "vk_loader.hpp"
+#include "gltf_loader.hpp"
 
 #include "vk_context.hpp"
 #include "vk_default_resources.hpp"
@@ -7,6 +7,8 @@
 
 #include <fastgltf/types.hpp>
 #include <iostream>
+// The loader is the only user of stb_image, so its implementation is compiled here.
+#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include <fastgltf/core.hpp>
