@@ -123,8 +123,6 @@ private:
      * @brief Upload this frame's `scene_data` and build the set that every material pipeline binds
      * as set 0.
      *
-     * Creates a new uniform buffer every frame and frees it a frame later through the frame's
-     * deletion queue. Step 7 of the refactor replaces this with a persistent per-frame buffer.
      *
      * @param scene The scene whose object buffer goes into binding 1.
      * @return The set, allocated from the current frame's descriptor allocator.

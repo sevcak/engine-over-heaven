@@ -42,12 +42,12 @@ struct FrameData
     VkSemaphore swapchain_semaphore;
     VkFence render_fence;
 
-    DeletionQueue deletion_queue;
-
     DescriptorAllocatorGrowable frame_descriptors;
 
     AllocatedBuffer indirect_buffer;
     AllocatedBuffer render_stats_buffer;
+
+    AllocatedBuffer scene_data_buffer;
 
     /**
      * Buffer storing the order of transparent objects for correct rendering.

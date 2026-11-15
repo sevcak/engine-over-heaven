@@ -61,10 +61,6 @@ void VulkanRenderer::cleanup()
 
     vkDeviceWaitIdle(_gpu.device);
 
-    for (FrameData &frame : _frames) {
-        frame.deletion_queue.flush();
-    }
-
     destroy_imgui(_gpu, _imgui_pool);
     destroy_object_buffers();
     _default_resources.destroy(_gpu);
@@ -86,9 +82,6 @@ void VulkanRenderer::draw(
 {
     // Wait until the GPU has finished rendering the last frame.
     VK_CHECK(vkWaitForFences(_gpu.device, 1, &get_current_frame().render_fence, true, 1000000000));
-
-    get_current_frame().deletion_queue.flush();
-    get_current_frame().frame_descriptors.clear_pools(_gpu.device);
 
     u32 swapchain_image_index;
     VkResult e = vkAcquireNextImageKHR(_gpu.device, _swapchain.handle, 1000000000,
@@ -390,6 +383,9 @@ void VulkanRenderer::init_object_buffers()
 
         _frames[i].transparent_order_buffer = _gpu.create_buffer(sizeof(u32) * MAX_OBJECTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        _frames[i].scene_data_buffer = _gpu.create_buffer(
+            sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 }
 
@@ -399,26 +395,23 @@ void VulkanRenderer::destroy_object_buffers()
         _gpu.destroy_buffer(frame.transparent_order_buffer);
         _gpu.destroy_buffer(frame.render_stats_buffer);
         _gpu.destroy_buffer(frame.indirect_buffer);
+        _gpu.destroy_buffer(frame.scene_data_buffer);
     }
 }
 
 VkDescriptorSet VulkanRenderer::create_scene_data_set(const RenderScene &scene)
 {
-    AllocatedBuffer gpu_scene_data_buffer = _gpu.create_buffer(
-        sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    AllocatedBuffer &scene_data_buffer = get_current_frame().scene_data_buffer;
 
-    get_current_frame().deletion_queue.push_function(
-        [=, this]() { _gpu.destroy_buffer(gpu_scene_data_buffer); });
-
-    GPUSceneData *scene_uniform_data = (GPUSceneData *)gpu_scene_data_buffer.info.pMappedData;
+    GPUSceneData *scene_uniform_data = (GPUSceneData *)scene_data_buffer.info.pMappedData;
     *scene_uniform_data = scene_data;
 
     VkDescriptorSet scene_data_set = get_current_frame().frame_descriptors.allocate(
         _gpu.device, _gpu_scene_data_descriptor_layout);
 
     DescriptorWriter writer;
-    writer.write_buffer(0, gpu_scene_data_buffer.buffer, sizeof(GPUSceneData), 0,
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_buffer(
+        0, scene_data_buffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_buffer(
         1, scene.object_buffer.buffer, VK_WHOLE_SIZE, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     writer.update_set(_gpu.device, scene_data_set);
