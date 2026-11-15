@@ -39,7 +39,7 @@ u32 record_forward_pass(VkCommandBuffer cmd, const RenderScene &scene, VkBuffer 
     u32 drawcall_count = 0;
 
     // Track the batching state.
-    MaterialInstance *last_material = nullptr;
+    const MaterialInstance *last_material = nullptr;
     VkBuffer last_index_buffer = VK_NULL_HANDLE;
     u32 batch_start = 0;
     u32 batch_count = 0;
@@ -70,7 +70,7 @@ u32 record_forward_pass(VkCommandBuffer cmd, const RenderScene &scene, VkBuffer 
     for (u32 d = 0; d < total_draws; d++) {
         const u32 slot =
             d < first_transparent ? d : scene.transparent_render_order[d - first_transparent];
-        MaterialInstance *material = scene.materials[slot];
+        const MaterialInstance *material = scene.materials[slot];
         VkBuffer index_buffer = scene.index_buffers[slot];
 
         // If the material or index buffer changes, flush the batch and start a new one.

@@ -12,6 +12,7 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/tools.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <logger/logger.hpp>
 
@@ -48,15 +49,8 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter)
     }
 }
 
-std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResources &defaults,
-    MaterialSystem &material_system, std::filesystem::path path)
+std::optional<fastgltf::Asset> parse_gltf_file(const std::filesystem::path &path)
 {
-    OH_LOG_INFO("Loading GLTF: {}", path.c_str());
-
-    std::unique_ptr<LoadedGLTF> scene = std::make_unique<LoadedGLTF>();
-    scene->gpu = &gpu;
-    LoadedGLTF &file = *scene.get();
-
     fastgltf::Parser parser {};
 
     const auto gltf_options = fastgltf::Options::DontRequireValidAssetMember |
@@ -97,15 +91,15 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
         return {};
     }
 
-    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
-    };
+    return gltf;
+}
 
-    file.descriptor_pool.init(gpu.device, gltf.materials.size(), sizes);
+std::vector<VkSampler> load_samplers(VkDevice device, const fastgltf::Asset &asset)
+{
+    std::vector<VkSampler> samplers;
+    samplers.reserve(asset.samplers.size());
 
-    // Load samplers.
-    for (fastgltf::Sampler &sampler : gltf.samplers) {
+    for (const fastgltf::Sampler &sampler : asset.samplers) {
         VkSamplerCreateInfo sampl = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
             .pNext = nullptr };
         sampl.maxLod = VK_LOD_CLAMP_NONE;
@@ -118,42 +112,90 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
             extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 
         VkSampler new_sampler;
-        vkCreateSampler(gpu.device, &sampl, nullptr, &new_sampler);
+        vkCreateSampler(device, &sampl, nullptr, &new_sampler);
 
-        file.samplers.push_back(new_sampler);
+        samplers.push_back(new_sampler);
     }
 
-    std::vector<std::shared_ptr<MeshAsset>> meshes;
-    std::vector<std::shared_ptr<Node>> nodes;
-    std::vector<AllocatedImage> images;
-    std::vector<std::shared_ptr<GLTFMaterial>> materials;
+    return samplers;
+}
 
-    // Load all textures.
-    for (fastgltf::Image &image : gltf.images) {
-        std::optional<AllocatedImage> img = load_image(gpu, gltf, image, path);
+std::vector<AllocatedImage> load_images(
+    const GpuContext &gpu, fastgltf::Asset &asset, std::filesystem::path gltf_path)
+{
+    std::vector<AllocatedImage> images;
+    images.reserve(asset.images.size());
+
+    for (fastgltf::Image &image : asset.images) {
+        std::optional<AllocatedImage> img = load_image(gpu, asset, image, gltf_path);
 
         if (img.has_value()) {
             images.push_back(*img);
-            file.images[image.name.c_str()] = *img;
         } else {
             OH_LOG_ERROR("Failed to load texture {}.", image.name);
-            images.push_back(defaults.error_checkerboard_image);
+            // Push an empty image, so the image indices stay in glTF order.
+            // This is safe, because whenever we see a null handle, we will use a default image and
+            // destroying null handles is a no-op.
+            images.push_back(AllocatedImage {});
         }
     }
 
+    return images;
+}
+
+/**
+ * @brief Picks the image a glTF texture refers to, falling back to a default if it failed to load.
+ * @param images Images in glTF image order. Images that failed to load have a null handle.
+ * @param index glTF image index from the texture.
+ * @param defaults Provides the error checkerboard.
+ * @param fallback Image to use when the texture names no valid image index.
+ * @return The image to bind.
+ */
+static AllocatedImage resolve_image(std::span<const AllocatedImage> images,
+    const fastgltf::Optional<usize> &index, const DefaultResources &defaults,
+    const AllocatedImage &fallback)
+{
+    if (!index.has_value() || *index >= images.size()) {
+        return fallback;
+    }
+    const AllocatedImage &image = images[*index];
+    return image.image != VK_NULL_HANDLE ? image : defaults.error_checkerboard_image;
+}
+
+/**
+ * @brief Creates the materials, their uniform buffer and the descriptor pool they allocate from.
+ * @param gpu Context to create the GPU resources with.
+ * @param defaults Fallback textures and samplers for materials that don't specify them.
+ * @param material_system Builds the material descriptor sets.
+ * @param asset Parsed glTF asset.
+ * @param images Images in glTF image order.
+ * @param scene Receives the descriptor pool, the material buffer and the materials.
+ */
+void load_materials(const GpuContext &gpu, const DefaultResources &defaults,
+    MaterialSystem &material_system, const fastgltf::Asset &asset,
+    std::span<const AllocatedImage> images, LoadedGLTF &scene)
+
+{
+    scene.materials.reserve(asset.materials.size());
+
+    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
+    };
+    scene.descriptor_pool.init(gpu.device, asset.materials.size(), sizes);
+
     // Create a buffer to hold the material data.
-    file.material_data_buffer = gpu.create_buffer(
-        sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
+    scene.material_data_buffer = gpu.create_buffer(
+        sizeof(GLTFMetallic_Roughness::MaterialConstants) * asset.materials.size(),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     GLTFMetallic_Roughness::MaterialConstants *scene_material_constants =
-        (GLTFMetallic_Roughness::MaterialConstants *)file.material_data_buffer.info.pMappedData;
+        (GLTFMetallic_Roughness::MaterialConstants *)scene.material_data_buffer.info.pMappedData;
 
     // Load the materials.
-    int data_index = 0;
-    for (fastgltf::Material &mat : gltf.materials) {
+    usize data_index = 0;
+    for (const fastgltf::Material &mat : asset.materials) {
         std::shared_ptr<GLTFMaterial> new_mat = std::make_shared<GLTFMaterial>();
-        materials.push_back(new_mat);
-        file.materials[mat.name.c_str()];
+        scene.materials.push_back(new_mat);
 
         GLTFMetallic_Roughness::MaterialConstants constants;
         constants.color_factors.x = mat.pbrData.baseColorFactor[0];
@@ -179,129 +221,143 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
         material_resources.metal_rough_image = defaults.white_image;
         material_resources.metal_rough_sampler = defaults.sampler_linear;
 
-        material_resources.data_buffer = file.material_data_buffer.buffer;
+        material_resources.data_buffer = scene.material_data_buffer.buffer;
         material_resources.data_buffer_offset =
             data_index * sizeof(GLTFMetallic_Roughness::MaterialConstants);
         if (mat.pbrData.baseColorTexture.has_value()) {
-            auto &tex = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex];
+            auto &tex = asset.textures[mat.pbrData.baseColorTexture.value().textureIndex];
 
-            if (tex.imageIndex.has_value() && *tex.imageIndex < images.size()) {
-                usize img = *tex.imageIndex;
-                material_resources.color_image = images[img];
-            }
-            if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
+            material_resources.color_image =
+                resolve_image(images, tex.imageIndex, defaults, defaults.white_image);
+
+            if (tex.samplerIndex.has_value() && *tex.samplerIndex < scene.samplers.size()) {
                 usize sampler = *tex.samplerIndex;
-                material_resources.color_sampler = file.samplers[sampler];
+                material_resources.color_sampler = scene.samplers[sampler];
             }
         }
         if (mat.pbrData.metallicRoughnessTexture.has_value()) {
-            auto &tex = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
+            auto &tex = asset.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
 
-            if (tex.imageIndex.has_value() && *tex.imageIndex < images.size()) {
-                material_resources.metal_rough_image = images[*tex.imageIndex];
-            }
-            if (tex.samplerIndex.has_value() && *tex.samplerIndex < file.samplers.size()) {
+            material_resources.metal_rough_image =
+                resolve_image(images, tex.imageIndex, defaults, defaults.white_image);
+
+            if (tex.samplerIndex.has_value() && *tex.samplerIndex < scene.samplers.size()) {
                 usize sampler = *tex.samplerIndex;
-                material_resources.metal_rough_sampler = file.samplers[sampler];
+                material_resources.metal_rough_sampler = scene.samplers[sampler];
             }
         }
         // Build the material.
         new_mat->data = material_system.get_type<GLTFMetallic_Roughness>().write_material(
-            gpu.device, pass_type, material_resources, file.descriptor_pool);
+            gpu.device, pass_type, material_resources, scene.descriptor_pool);
 
         data_index++;
     }
+}
 
+/**
+ * @brief Uploads every glTF mesh to the GPU, with one index and one vertex buffer per mesh.
+ *
+ * @param gpu Context to upload the buffers with.
+ * @param defaults Provides the material for primitives that don't name a valid one.
+ * @param asset Parsed glTF asset.
+ * @param materials Materials in glTF material order.
+ * @return The meshes, in glTF mesh order.
+ */
+std::vector<std::shared_ptr<MeshAsset>> load_meshes(const GpuContext &gpu,
+    const DefaultResources &defaults, const fastgltf::Asset &asset,
+    std::span<const std::shared_ptr<GLTFMaterial>> materials)
+{
+    std::vector<std::shared_ptr<MeshAsset>> meshes;
+    meshes.reserve(asset.meshes.size());
+
+    // Reused across meshes so they don't reallocate for every mesh.
     std::vector<u32> indices;
     std::vector<Vertex> vertices;
-    for (fastgltf::Mesh &mesh : gltf.meshes) {
+
+    for (const fastgltf::Mesh &mesh : asset.meshes) {
         std::shared_ptr<MeshAsset> new_mesh = std::make_shared<MeshAsset>();
-        meshes.push_back(new_mesh);
-        file.meshes[mesh.name.c_str()] = new_mesh;
         new_mesh->name = mesh.name;
 
         indices.clear();
         vertices.clear();
 
-        for (auto &p : mesh.primitives) {
+        for (const fastgltf::Primitive &p : mesh.primitives) {
+            // Check everything that can be missing before appending anything, so a skipped
+            // primitive leaves no stray indices or vertices behind.
+            auto position_it = p.findAttribute("POSITION");
+            if (position_it == p.attributes.end() || !p.indicesAccessor.has_value()) {
+                OH_LOG_ERROR(
+                    "Skipping a primitive in mesh {} without positions or indices.", mesh.name);
+                continue;
+            }
+            const fastgltf::Accessor &pos_accessor = asset.accessors[position_it->accessorIndex];
+            if (pos_accessor.count == 0) {
+                OH_LOG_ERROR("Skipping a primitive in mesh {} with no vertices.", mesh.name);
+                continue;
+            }
+            const fastgltf::Accessor &index_accessor = asset.accessors[*p.indicesAccessor];
+
             GeoSurface new_surface;
             new_surface.start_index = (u32)indices.size();
-            new_surface.count = (u32)gltf.accessors[p.indicesAccessor.value()].count;
+            new_surface.count = (u32)index_accessor.count;
 
-            usize initial_vert = vertices.size();
+            const usize initial_vert = vertices.size();
 
-            // Load indices.
-            {
-                const auto &index_accessor = gltf.accessors[p.indicesAccessor.value()];
-                indices.reserve(indices.size() + index_accessor.count);
+            // Offset the indices so they point into this mesh's shared vertex buffer.
+            indices.reserve(indices.size() + index_accessor.count);
+            fastgltf::iterateAccessor<u32>(asset, index_accessor,
+                [&](u32 idx) { indices.push_back(idx + (u32)initial_vert); });
 
-                fastgltf::iterateAccessor<u32>(gltf, index_accessor,
-                    [&](u32 idx) { indices.push_back(idx + initial_vert); });
-            }
+            // Positions set every vertex, so give the optional attributes their defaults here.
+            vertices.resize(vertices.size() + pos_accessor.count);
+            fastgltf::iterateAccessorWithIndex<glm::vec3>(
+                asset, pos_accessor, [&](glm::vec3 v, usize index) {
+                    Vertex new_vert;
+                    new_vert.position = v;
+                    new_vert.normal = { 1.0f, 0.0f, 0.0f };
+                    new_vert.color = glm::vec4 { 1.0f };
+                    new_vert.uv_x = 0;
+                    new_vert.uv_y = 0;
+                    vertices[initial_vert + index] = new_vert;
+                });
 
-            // Load vertex positions.
-            {
-                auto position_it = p.findAttribute("POSITION");
-                if (position_it == p.attributes.end()) {
-                    OH_LOG_ERROR("Didn't find position attribute.");
-                    return {};
-                }
-                const auto &pos_accessor = gltf.accessors[position_it->accessorIndex];
-                vertices.resize(vertices.size() + pos_accessor.count);
-
-                fastgltf::iterateAccessorWithIndex<glm::vec3>(
-                    gltf, pos_accessor, [&](glm::vec3 v, usize index) {
-                        Vertex new_vert;
-                        new_vert.position = v;
-                        new_vert.normal = { 1.0f, 0.0f, 0.0f };
-                        new_vert.color = glm::vec4 { 1.0f };
-                        new_vert.uv_x = 0;
-                        new_vert.uv_y = 0;
-                        vertices[initial_vert + index] = new_vert;
-                    });
-            }
-
-            // Load vertex normals.
             auto normals_it = p.findAttribute("NORMAL");
             if (normals_it != p.attributes.end()) {
-                const auto &norm_accessor = gltf.accessors[normals_it->accessorIndex];
-                fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, norm_accessor,
+                const fastgltf::Accessor &norm_accessor =
+                    asset.accessors[normals_it->accessorIndex];
+                fastgltf::iterateAccessorWithIndex<glm::vec3>(asset, norm_accessor,
                     [&](glm::vec3 v, usize index) { vertices[initial_vert + index].normal = v; });
             }
 
-            // Load UVs.
             auto uv_it = p.findAttribute("TEXCOORD_0");
             if (uv_it != p.attributes.end()) {
-                const auto &uv_accessor = gltf.accessors[uv_it->accessorIndex];
+                const fastgltf::Accessor &uv_accessor = asset.accessors[uv_it->accessorIndex];
                 fastgltf::iterateAccessorWithIndex<glm::vec2>(
-                    gltf, uv_accessor, [&](glm::vec2 v, usize index) {
+                    asset, uv_accessor, [&](glm::vec2 v, usize index) {
                         vertices[initial_vert + index].uv_x = v.x;
                         vertices[initial_vert + index].uv_y = v.y;
                     });
             }
 
-            // Load vertex colors.
             auto color_it = p.findAttribute("COLOR_0");
             if (color_it != p.attributes.end()) {
-                const auto &color_accessor = gltf.accessors[color_it->accessorIndex];
-                fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, color_accessor,
+                const fastgltf::Accessor &color_accessor = asset.accessors[color_it->accessorIndex];
+                fastgltf::iterateAccessorWithIndex<glm::vec4>(asset, color_accessor,
                     [&](glm::vec4 v, usize index) { vertices[initial_vert + index].color = v; });
             }
 
-            if (p.materialIndex.has_value()) {
-                new_surface.material = materials[p.materialIndex.value()];
-            } else {
-                new_surface.material = materials[0];
-            }
+            const bool has_material =
+                p.materialIndex.has_value() && *p.materialIndex < materials.size();
+            new_surface.material =
+                has_material ? &materials[*p.materialIndex]->data : &defaults.default_material;
 
-            // Loop the vertices of this surface, find min/max bounds.
+            // Compute the bounds from the min/max of this surface's vertices.
             glm::vec3 min_pos = vertices[initial_vert].position;
             glm::vec3 max_pos = min_pos;
-            for (int i = initial_vert; i < vertices.size(); i++) {
+            for (usize i = initial_vert; i < vertices.size(); i++) {
                 min_pos = glm::min(min_pos, vertices[i].position);
                 max_pos = glm::max(max_pos, vertices[i].position);
             }
-            // Compute the origin and extents from min/max, use extent length for radius.
             new_surface.bounds.origin = (max_pos + min_pos) / 2.0f;
             new_surface.bounds.extents = (max_pos - min_pos) / 2.0f;
             new_surface.bounds.sphere_radius = glm::length(new_surface.bounds.extents);
@@ -309,25 +365,50 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
             new_mesh->surfaces.push_back(new_surface);
         }
 
-        new_mesh->mesh_buffers = gpu.upload_mesh(indices, vertices);
+        // A mesh whose primitives were all skipped keeps null buffers and draws nothing.
+        if (!new_mesh->surfaces.empty()) {
+            new_mesh->mesh_buffers = gpu.upload_mesh(indices, vertices);
+        }
+        meshes.push_back(std::move(new_mesh));
     }
 
-    // Load all nodes and their meshes.
-    for (fastgltf::Node &node : gltf.nodes) {
+    return meshes;
+}
+
+/**
+ * @brief Creates the scene nodes, links them into a hierarchy and computes their world transforms.
+ * @param asset Parsed glTF asset.
+ * @param meshes Meshes in glTF mesh order.
+ * @return The root nodes, which own the rest of the hierarchy.
+ */
+std::vector<std::shared_ptr<Node>> build_node_hierarchy(
+    const fastgltf::Asset &asset, std::span<const std::shared_ptr<MeshAsset>> meshes)
+{
+    // Every node in glTF order, so children can be linked by index.
+    std::vector<std::shared_ptr<Node>> nodes;
+    nodes.reserve(asset.nodes.size());
+
+    for (const fastgltf::Node &node : asset.nodes) {
         std::shared_ptr<Node> new_node;
 
-        if (node.meshIndex.has_value()) {
-            new_node = std::make_shared<MeshNode>();
-            std::static_pointer_cast<MeshNode>(new_node)->mesh = meshes[*node.meshIndex];
+        // A node with a bad mesh index still becomes a plain node, so the indices of the nodes
+        // after it stay valid and its children still render.
+        if (node.meshIndex.has_value() && *node.meshIndex < meshes.size()) {
+            auto mesh_node = std::make_shared<MeshNode>();
+            mesh_node->mesh = meshes[*node.meshIndex];
+            new_node = std::move(mesh_node);
         } else {
+            if (node.meshIndex.has_value()) {
+                OH_LOG_ERROR("Node {} refers to mesh {}, but the file has only {} meshes.",
+                    node.name, *node.meshIndex, meshes.size());
+            }
             new_node = std::make_shared<Node>();
         }
 
         nodes.push_back(new_node);
-        file.nodes[node.name.c_str()];
 
         auto on_matrix = [&](const fastgltf::math::fmat4x4 &matrix) {
-            memcpy(&new_node->local_transform, matrix.data(), sizeof(matrix));
+            new_node->local_transform = glm::make_mat4(matrix.data());
         };
 
         auto on_trs = [&](const fastgltf::TRS &transform) {
@@ -347,24 +428,52 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
         std::visit(fastgltf::visitor { on_matrix, on_trs }, node.transform);
     }
 
-    // Set up the transform hierarchy.
-    for (usize i = 0; i < gltf.nodes.size(); i++) {
-        fastgltf::Node &node = gltf.nodes[i];
-        std::shared_ptr<Node> &scene_node = nodes[i];
+    // Link every node to its children.
+    for (usize i = 0; i < asset.nodes.size(); i++) {
+        const fastgltf::Node &node = asset.nodes[i];
+        const std::shared_ptr<Node> &scene_node = nodes[i];
 
-        for (auto &c : node.children) {
+        for (usize c : node.children) {
+            if (c >= nodes.size()) {
+                OH_LOG_ERROR("Node {} refers to child node {}, but the file has only {} nodes.",
+                    node.name, c, nodes.size());
+                continue;
+            }
             scene_node->children.push_back(nodes[c]);
             nodes[c]->parent = scene_node;
         }
     }
 
-    // Find the root nodes with no parents.
+    // The parentless nodes are the roots. Computing their world transforms also computes those of
+    // every node below them.
+    std::vector<std::shared_ptr<Node>> top_nodes;
     for (const auto &node : nodes) {
         if (node->parent.lock() == nullptr) {
-            file.top_nodes.push_back(node);
+            top_nodes.push_back(node);
             node->refresh_transform(glm::mat4(1.0f));
         }
     }
+
+    return top_nodes;
+}
+
+std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResources &defaults,
+    MaterialSystem &material_system, std::filesystem::path path)
+{
+    OH_LOG_INFO("Loading GLTF: {}", path.c_str());
+
+    std::optional<fastgltf::Asset> asset = parse_gltf_file(path);
+    if (!asset) {
+        return nullptr;
+    }
+
+    auto scene = std::make_unique<LoadedGLTF>();
+    scene->gpu = &gpu;
+    scene->samplers = load_samplers(gpu.device, *asset);
+    scene->images = load_images(gpu, *asset, path);
+    load_materials(gpu, defaults, material_system, *asset, scene->images, *scene);
+    scene->meshes = load_meshes(gpu, defaults, *asset, scene->materials);
+    scene->top_nodes = build_node_hierarchy(*asset, scene->meshes);
 
     return scene;
 }
@@ -383,12 +492,13 @@ void LoadedGLTF::clear_all()
     descriptor_pool.destroy_pools(dev);
     gpu->destroy_buffer(material_data_buffer);
 
-    for (auto &[k, mesh] : meshes) {
+    for (const auto &mesh : meshes) {
         gpu->destroy_buffer(mesh->mesh_buffers.index_buffer);
         gpu->destroy_buffer(mesh->mesh_buffers.vertex_buffer);
     }
 
-    for (auto &[k, image] : images) {
+    // Images that failed to load have null handles, and destroying those is a no-op.
+    for (const AllocatedImage &image : images) {
         gpu->destroy_image(image);
     }
 
@@ -466,8 +576,8 @@ std::optional<AllocatedImage> load_image(const GpuContext &gpu, fastgltf::Asset 
                         static_cast<int>(buffer_view.byteLength), &width, &height, &n_channels, 4);
 
                     if (data) {
-                        VkExtent3D image_size = { static_cast<u32>(width),
-                            static_cast<u32>(height), 1 };
+                        VkExtent3D image_size = { static_cast<u32>(width), static_cast<u32>(height),
+                            1 };
                         new_image = gpu.create_image(data, image_size, VK_FORMAT_R8G8B8A8_UNORM,
                             VK_IMAGE_USAGE_SAMPLED_BIT, true);
                         stbi_image_free(data);
@@ -492,12 +602,12 @@ void MeshNode::draw(const glm::mat4 &top_matrix, DrawContext &ctx)
         def.index_count = s.count;
         def.first_index = s.start_index;
         def.index_buffer = mesh->mesh_buffers.index_buffer.buffer;
-        def.material = &s.material->data;
+        def.material = s.material;
         def.bounds = s.bounds;
         def.transform = node_matrix;
         def.vertex_buffer_address = mesh->mesh_buffers.vertex_buffer_address;
 
-        if (s.material->data.pass_type == MaterialPass::Transparent) {
+        if (s.material->pass_type == MaterialPass::Transparent) {
             ctx.transparent_surfaces.push_back(def);
         } else {
             ctx.opaque_surfaces.push_back(def);

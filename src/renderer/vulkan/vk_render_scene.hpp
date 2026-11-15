@@ -42,7 +42,7 @@ struct RenderScene
     // TODO: We should consider storing indices here instead for better control and potential memory
     // savings.
     /** Material of the draw at each slot. Read by draw recording to decide when to rebind. */
-    std::vector<MaterialInstance *> materials;
+    std::vector<const MaterialInstance *> materials;
     /** First transparent slot. Equals the opaque draw count. */
     u32 first_transparent_index = 0;
 
@@ -78,7 +78,7 @@ struct RenderObject
     u32 first_index;
     VkBuffer index_buffer;
 
-    MaterialInstance *material;
+    const MaterialInstance *material;
     Bounds bounds;
     glm::mat4 transform;
     VkDeviceAddress vertex_buffer_address;

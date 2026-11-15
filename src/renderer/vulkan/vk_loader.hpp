@@ -11,7 +11,8 @@ struct GeoSurface
     u32 start_index;
     u32 count;
     Bounds bounds;
-    std::shared_ptr<GLTFMaterial> material;
+    /** Material to draw with. Owned by the `LoadedGLTF` or by `DefaultResources`. */
+    const MaterialInstance *material;
 };
 
 struct MeshAsset
@@ -59,10 +60,11 @@ struct GpuContext;
 
 struct LoadedGLTF : public IRenderable
 {
-    std::unordered_map<std::string, std::shared_ptr<MeshAsset>> meshes;
-    std::unordered_map<std::string, std::shared_ptr<Node>> nodes;
-    std::unordered_map<std::string, AllocatedImage> images;
-    std::unordered_map<std::string, std::shared_ptr<GLTFMaterial>> materials;
+    /** Meshes in glTF mesh order. */
+    std::vector<std::shared_ptr<MeshAsset>> meshes;
+    /** Images in glTF image order. Images that failed to load have null handles. */
+    std::vector<AllocatedImage> images;
+    std::vector<std::shared_ptr<GLTFMaterial>> materials;
 
     std::vector<std::shared_ptr<Node>> top_nodes;
 
