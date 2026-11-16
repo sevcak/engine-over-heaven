@@ -1,6 +1,8 @@
 add_library(assets STATIC
     gltf_loader.cpp
     gltf_loader.hpp
+    gltf_image_usage.hpp
+    gltf_image_usage.cpp
 )
 
 set_property(TARGET assets PROPERTY CXX_STANDARD 20)

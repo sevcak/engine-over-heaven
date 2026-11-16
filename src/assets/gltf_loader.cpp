@@ -1,5 +1,6 @@
 #include "gltf_loader.hpp"
 
+#include "gltf_image_usage.hpp"
 #include "vk_context.hpp"
 #include "vk_default_resources.hpp"
 #include "vk_render_scene.hpp"
@@ -123,19 +124,26 @@ std::vector<VkSampler> load_samplers(VkDevice device, const fastgltf::Asset &ass
     return samplers;
 }
 
-std::vector<AllocatedImage> load_images(
-    const GpuContext &gpu, fastgltf::Asset &asset, std::filesystem::path gltf_path)
+std::vector<AllocatedImage> load_images(const GpuContext &gpu, fastgltf::Asset &asset,
+    const std::span<const ImageUsage> image_usage, std::filesystem::path gltf_path)
 {
     std::vector<AllocatedImage> images;
     images.reserve(asset.images.size());
 
-    for (fastgltf::Image &image : asset.images) {
+    for (usize i = 0; i < asset.images.size(); ++i) {
+        if (image_usage[i] == ImageUsage::Unused) {
+            OH_LOG_DEBUG("Skipping unused image {}.", describe_image(asset.images[i], i));
+            images.push_back(AllocatedImage {});
+            continue;
+        }
+
+        fastgltf::Image &image = asset.images[i];
         std::optional<AllocatedImage> img = load_image(gpu, asset, image, gltf_path);
 
         if (img.has_value()) {
             images.push_back(*img);
         } else {
-            OH_LOG_ERROR("Failed to load texture {}.", image.name);
+            OH_LOG_ERROR("Failed to load texture {}.", describe_image(image, i));
             // Push an empty image, so the image indices stay in glTF order.
             // This is safe, because whenever we see a null handle, we will use a default image and
             // destroying null handles is a no-op.
@@ -481,10 +489,12 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
     }
     const f64 parse_ms = lap_ms();
 
+    const std::vector<ImageUsage> image_usage = collect_image_usage(*asset);
+
     auto scene = std::make_unique<LoadedGLTF>();
     scene->gpu = &gpu;
     scene->samplers = load_samplers(gpu.device, *asset);
-    scene->images = load_images(gpu, *asset, path);
+    scene->images = load_images(gpu, *asset, image_usage, path);
     const f64 images_ms = lap_ms();
 
     load_materials(gpu, defaults, material_system, *asset, scene->images, *scene);
@@ -497,9 +507,14 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
     const f64 nodes_ms = lap_ms();
 
     const f64 total_ms = std::chrono::duration<f64, std::milli>(phase_start - load_start).count();
-    OH_LOG_INFO("Loaded {} in {:.1f} ms (parse {:.1f}, images {:.1f}, materials {:.1f}, meshes "
+
+    const usize loaded_image_count = std::count_if(scene->images.begin(), scene->images.end(),
+        [](const AllocatedImage &img) { return img.image != VK_NULL_HANDLE; });
+    OH_LOG_INFO("Loaded {} in {:.1f} ms: {}/{} images (parse {:.1f}, images {:.1f}, materials "
+                "{:.1f}, meshes "
                 "{:.1f}, nodes {:.1f}).",
-        path.filename().c_str(), total_ms, parse_ms, images_ms, materials_ms, meshes_ms, nodes_ms);
+        path.filename().c_str(), total_ms, loaded_image_count, scene->images.size(), parse_ms,
+        images_ms, materials_ms, meshes_ms, nodes_ms);
 
     return scene;
 }
