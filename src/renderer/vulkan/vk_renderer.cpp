@@ -83,6 +83,8 @@ void VulkanRenderer::draw(
     // Wait until the GPU has finished rendering the last frame.
     VK_CHECK(vkWaitForFences(_gpu.device, 1, &get_current_frame().render_fence, true, 1000000000));
 
+    get_current_frame().frame_descriptors.clear_pools(_gpu.device);
+
     u32 swapchain_image_index;
     VkResult e = vkAcquireNextImageKHR(_gpu.device, _swapchain.handle, 1000000000,
         get_current_frame().swapchain_semaphore, nullptr, &swapchain_image_index);

@@ -1,6 +1,6 @@
+#include <logger/logger.hpp>
 #include <vk_descriptors.hpp>
 #include <vulkan/vulkan_core.h>
-#include <logger/logger.hpp>
 
 void DescriptorLayoutBuilder::add_binding(u32 binding, VkDescriptorType type)
 {
@@ -74,7 +74,7 @@ VkDescriptorPool DescriptorAllocatorGrowable::create_pool(
     pool_info.pPoolSizes = pool_sizes.data();
 
     VkDescriptorPool new_pool;
-    vkCreateDescriptorPool(device, &pool_info, nullptr, &new_pool);
+    VK_CHECK(vkCreateDescriptorPool(device, &pool_info, nullptr, &new_pool));
 
     return new_pool;
 }
@@ -142,7 +142,7 @@ VkDescriptorSet DescriptorAllocatorGrowable::try_allocate(
 
         alloc_info.descriptorPool = pool_to_use;
 
-        VK_CHECK(vkAllocateDescriptorSets(device, &alloc_info, &ds));
+        VK_CHECK(result = vkAllocateDescriptorSets(device, &alloc_info, &ds));
     }
 
     if (result != VK_SUCCESS) {
