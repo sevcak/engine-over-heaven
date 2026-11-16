@@ -5,6 +5,7 @@
 #include "vk_render_scene.hpp"
 #include "vk_types.hpp"
 
+#include <chrono>
 #include <fastgltf/types.hpp>
 #include <iostream>
 // The loader is the only user of stb_image, so its implementation is compiled here.
@@ -464,18 +465,41 @@ std::unique_ptr<LoadedGLTF> load_gltf(const GpuContext &gpu, const DefaultResour
 {
     OH_LOG_INFO("Loading GLTF: {}", path.c_str());
 
+    using clock = std::chrono::steady_clock;
+    const clock::time_point load_start = clock::now();
+    clock::time_point phase_start = load_start;
+    auto lap_ms = [&phase_start]() {
+        const clock::time_point now = clock::now();
+        const f64 ms = std::chrono::duration<f64, std::milli>(now - phase_start).count();
+        phase_start = now;
+        return ms;
+    };
+
     std::optional<fastgltf::Asset> asset = parse_gltf_file(path);
     if (!asset) {
         return nullptr;
     }
+    const f64 parse_ms = lap_ms();
 
     auto scene = std::make_unique<LoadedGLTF>();
     scene->gpu = &gpu;
     scene->samplers = load_samplers(gpu.device, *asset);
     scene->images = load_images(gpu, *asset, path);
+    const f64 images_ms = lap_ms();
+
     load_materials(gpu, defaults, material_system, *asset, scene->images, *scene);
+    const f64 materials_ms = lap_ms();
+
     scene->meshes = load_meshes(gpu, defaults, *asset, scene->materials);
+    const f64 meshes_ms = lap_ms();
+
     scene->top_nodes = build_node_hierarchy(*asset, scene->meshes);
+    const f64 nodes_ms = lap_ms();
+
+    const f64 total_ms = std::chrono::duration<f64, std::milli>(phase_start - load_start).count();
+    OH_LOG_INFO("Loaded {} in {:.1f} ms (parse {:.1f}, images {:.1f}, materials {:.1f}, meshes "
+                "{:.1f}, nodes {:.1f}).",
+        path.filename().c_str(), total_ms, parse_ms, images_ms, materials_ms, meshes_ms, nodes_ms);
 
     return scene;
 }
